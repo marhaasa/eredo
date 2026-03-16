@@ -1,0 +1,31 @@
+{
+  "name": "Claude Code Sandbox",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "TZ": "${localEnv:TZ:Europe/Oslo}",
+      "CLAUDE_CODE_VERSION": "latest",
+      "ZSH_IN_DOCKER_VERSION": "1.2.0"
+    }
+  },
+  "runArgs": [
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW"
+  ],
+  "remoteUser": "node",
+  "mounts": [
+    "source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
+    "source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached"
+  ],
+  "containerEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
+    "EDITOR": "nvim",
+    "VISUAL": "nvim"
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
+  "workspaceFolder": "/workspace",
+  "postStartCommand": "python3 -c \"import json,pathlib;p=pathlib.Path('/home/node/.claude/.claude.json');d=json.loads(p.read_text()) if p.exists() else {};d['hasCompletedOnboarding']=True;p.write_text(json.dumps(d))\" && echo 'Ready. Run: claude (firewall optional: enable-firewall)'",
+  "postCreateCommand": "echo '#!/bin/bash\nsudo /usr/local/bin/init-firewall.sh' > /home/node/.local/bin/enable-firewall && chmod +x /home/node/.local/bin/enable-firewall"
+}
