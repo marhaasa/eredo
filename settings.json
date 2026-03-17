@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(find *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(git *)",
+      "Bash(pwd*)",
+      "Bash(echo *)",
+      "Bash(which *)",
+      "Bash(tree *)",
+      "Bash(ls *&&*)",
+      "Bash(cd *)",
+      "Read(*)",
+      "Glob(*)",
+      "Grep(*)"
+    ]
+  }
+}

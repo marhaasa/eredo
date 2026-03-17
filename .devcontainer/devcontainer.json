@@ -15,7 +15,7 @@
   "remoteUser": "node",
   "mounts": [
     "source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
-    "source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached"
+    "source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume"
   ],
   "containerEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096",
@@ -26,6 +26,6 @@
   },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
-  "postStartCommand": "python3 -c \"import json,pathlib;p=pathlib.Path('/home/node/.claude/.claude.json');d=json.loads(p.read_text()) if p.exists() else {};d['hasCompletedOnboarding']=True;p.write_text(json.dumps(d))\" && echo 'Ready. Run: claude (firewall optional: enable-firewall)'",
+  "postStartCommand": "python3 -c \"import json,pathlib;p=pathlib.Path('/home/node/.claude/.claude.json');d=json.loads(p.read_text()) if p.exists() else {};d['hasCompletedOnboarding']=True;d.setdefault('trustedDirectories',[]);'/workspace' not in d['trustedDirectories'] and d['trustedDirectories'].append('/workspace');p.write_text(json.dumps(d))\" && echo 'Ready.'",
   "postCreateCommand": "echo '#!/bin/bash\nsudo /usr/local/bin/init-firewall.sh' > /home/node/.local/bin/enable-firewall && chmod +x /home/node/.local/bin/enable-firewall"
 }
