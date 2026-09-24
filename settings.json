@@ -26,6 +26,7 @@
       "Grep(*)"
     ],
     "deny": [
+      "WebSearch",
       "Bash(git push:*)",
       "Bash(git remote:*)",
       "Read(./.env)",

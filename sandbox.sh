@@ -30,11 +30,10 @@ LABEL="claude.sandbox"
 SETTINGS="$HERE/settings.json"
 PLUGINS="$HERE/plugins.txt"
 MCP="$HERE/mcp.json"
-# LISTEN:HOST:PORT forwarded by the proxy so the sandbox can reach one host
-# port (the reminders MCP server). Inside the sandbox the proxy also answers to
-# the name host.docker.internal, so http://host.docker.internal:8765 lands on
-# the host server with a Host header it accepts. CLAUDE_MCP_FORWARD="" disables.
-MCP_FORWARD="${CLAUDE_MCP_FORWARD-8765:host.docker.internal:8765}"
+# Optional LISTEN:HOST:PORT the proxy forwards with socat, so the sandbox can
+# reach exactly one host port as http://proxy:LISTEN (for a local MCP server or
+# database). Off by default. Example: CLAUDE_SANDBOX_FORWARD=8765:host.docker.internal:8765
+HOST_FORWARD="${CLAUDE_SANDBOX_FORWARD-}"
 PROXY_URL="http://proxy:3128"
 
 BG_ACTIVE='\033]11;#282828\033\\'
@@ -158,7 +157,7 @@ cmd_up() {
   local name sbx prx nw
   name="$(basename "$primary")"
   sbx="$(sb "$name")"; prx="$(px "$name")"; nw="$(net "$name")"
-  local spec="v2 $primary rw=$rw ${extras[*]-}"
+  local spec="v3 $primary rw=$rw ${extras[*]-}"
 
   ensure_docker
   [ $rebuild -eq 1 ] && cmd_build
@@ -184,10 +183,10 @@ cmd_up() {
   info "Starting proxy $prx"
   docker create --name "$prx" \
     --label "$LABEL=1" --label "claude.role=proxy" --label "claude.project=$name" \
-    --network "$nw" --network-alias proxy --network-alias host.docker.internal \
+    --network "$nw" --network-alias proxy \
     --add-host host.docker.internal:host-gateway \
     --mount "type=bind,source=$HERE/proxy,target=/etc/claude-proxy,readonly" \
-    -e "FORWARD=$MCP_FORWARD" \
+    -e "FORWARD=$HOST_FORWARD" \
     "$PROXY_IMAGE" >/dev/null
   docker network connect "$EGRESS_NET" "$prx"
   docker start "$prx" >/dev/null
@@ -213,8 +212,8 @@ cmd_up() {
     --mount "type=volume,source=claude-$name-history,target=/commandhistory" \
     -e "HTTP_PROXY=$PROXY_URL"  -e "HTTPS_PROXY=$PROXY_URL" \
     -e "http_proxy=$PROXY_URL"  -e "https_proxy=$PROXY_URL" \
-    -e "NO_PROXY=proxy,host.docker.internal,localhost,127.0.0.1" \
-    -e "no_proxy=proxy,host.docker.internal,localhost,127.0.0.1" \
+    -e "NO_PROXY=proxy,localhost,127.0.0.1" \
+    -e "no_proxy=proxy,localhost,127.0.0.1" \
     -e CLAUDE_CONFIG_DIR=/home/node/.claude \
     -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
     -e DISABLE_TELEMETRY=1 \
@@ -239,7 +238,8 @@ cmd_up() {
 }
 
 # Configure a fresh sandbox: skip onboarding, trust /workspace, install
-# settings, MCP servers and plugins, describe extra mounts in CLAUDE.md.
+# settings, plugins and any MCP servers listed in an optional mcp.json,
+# describe extra mounts in CLAUDE.md.
 cmd_bootstrap() {
   local c="$1"; shift
   local rw=0

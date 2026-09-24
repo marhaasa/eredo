@@ -17,5 +17,5 @@ registry.npmjs.org
 # pypi.org
 # files.pythonhosted.org
 
-# Remote MCP servers used by plugins. Uncomment as needed.
-# mcp.context7.com
+# Remote MCP servers used by plugins.
+mcp.context7.com
