@@ -1,24 +1,52 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls *)",
-      "Bash(cat *)",
-      "Bash(find *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(wc *)",
-      "Bash(grep *)",
-      "Bash(rg *)",
-      "Bash(git *)",
-      "Bash(pwd*)",
-      "Bash(echo *)",
-      "Bash(which *)",
-      "Bash(tree *)",
-      "Bash(ls *&&*)",
-      "Bash(cd *)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(fd:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(pwd)",
+      "Bash(echo:*)",
+      "Bash(which:*)",
+      "Bash(tree:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git blame:*)",
+      "Bash(git stash list:*)",
       "Read(*)",
       "Glob(*)",
       "Grep(*)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/claude-audit-hook",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

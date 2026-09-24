@@ -1,0 +1,21 @@
+# Domains the sandbox may reach. HTTPS only, always through the proxy sidecar.
+# Squid dstdomain syntax: a leading dot matches the domain and every subdomain.
+# After editing, run `sandbox.sh reload` (or claude-clean and start again).
+
+# Claude Code API (the only destination Claude Code itself needs with
+# telemetry, error reporting and auto-update disabled)
+api.anthropic.com
+
+# git over HTTPS, gh, plugin marketplaces, release downloads
+.github.com
+.githubusercontent.com
+
+# npm registry (npx-based MCP servers and plugin dependencies)
+registry.npmjs.org
+
+# Python packaging. Uncomment if a project needs uv/pip inside the sandbox.
+# pypi.org
+# files.pythonhosted.org
+
+# Remote MCP servers used by plugins. Uncomment as needed.
+# mcp.context7.com
