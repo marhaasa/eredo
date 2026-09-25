@@ -1,7 +1,7 @@
 # Domains the sandbox may reach. HTTPS only, always through the proxy sidecar.
 # Squid dstdomain syntax: a leading dot matches the domain and every subdomain.
-# Add your own in ~/.config/moat/allowlist.txt (merged) or per repo in
-# <repo>/.moat/allowlist.txt, then run `moat reload`.
+# Add your own in ~/.config/eredo/allowlist.txt (merged) or per repo in
+# <repo>/.eredo/allowlist.txt, then run `eredo reload`.
 
 # Claude Code API: the only destination Claude Code itself needs with
 # telemetry, error reporting and auto-update disabled

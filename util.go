@@ -39,8 +39,8 @@ func absDir(p string) (string, error) {
 }
 
 var (
-	configDir = env("MOAT_CONFIG", filepath.Join(env("XDG_CONFIG_HOME", filepath.Join(home(), ".config")), "moat"))
-	stateDir  = env("MOAT_STATE", filepath.Join(env("XDG_STATE_HOME", filepath.Join(home(), ".local", "state")), "moat"))
+	configDir = env("EREDO_CONFIG", filepath.Join(env("XDG_CONFIG_HOME", filepath.Join(home(), ".config")), "eredo"))
+	stateDir  = env("EREDO_STATE", filepath.Join(env("XDG_STATE_HOME", filepath.Join(home(), ".local", "state")), "eredo"))
 )
 
 // containerPath maps a host path to the path used inside the sandbox. On
@@ -154,19 +154,19 @@ func ensureDocker() error {
 	return nil
 }
 
-func sb(name string) string  { return "moat-" + name }
-func px(name string) string  { return "moat-" + name + "-proxy" }
-func net(name string) string { return "moat-" + name + "-net" }
+func sb(name string) string  { return "eredo-" + name }
+func px(name string) string  { return "eredo-" + name + "-proxy" }
+func net(name string) string { return "eredo-" + name + "-net" }
 
 const (
-	egressNet    = "moat-egress"
-	labelKey     = "moat.sandbox"
+	egressNet    = "eredo-egress"
+	labelKey     = "eredo.sandbox"
 	proxyURL     = "http://proxy:3128"
 	specVersion  = "v7"
-	sandboxImage = "moat-sandbox:local"
-	proxyImage   = "moat-proxy:local"
+	sandboxImage = "eredo-sandbox:local"
+	proxyImage   = "eredo-proxy:local"
 )
 
 func imageNames() (string, string) {
-	return env("MOAT_IMAGE", sandboxImage), env("MOAT_PROXY_IMAGE", proxyImage)
+	return env("EREDO_IMAGE", sandboxImage), env("EREDO_PROXY_IMAGE", proxyImage)
 }

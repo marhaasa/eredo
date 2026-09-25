@@ -7,7 +7,7 @@ import (
 
 // cmdBuild builds both images from the sources embedded in the binary.
 func cmdBuild(pull bool) error {
-	tmp, err := os.MkdirTemp("", "moat-build")
+	tmp, err := os.MkdirTemp("", "eredo-build")
 	if err != nil {
 		return err
 	}

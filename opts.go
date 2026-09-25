@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-// parseClaudeOpts pulls --model, --effort and --mode (or MOAT_MODEL,
-// MOAT_EFFORT, MOAT_MODE) out of args and returns the matching claude flags
+// parseClaudeOpts pulls --model, --effort and --mode (or EREDO_MODEL,
+// EREDO_EFFORT, EREDO_MODE) out of args and returns the matching claude flags
 // plus everything else untouched.
 func parseClaudeOpts(args []string) (flags, rest []string, err error) {
-	model, effort, mode := env("MOAT_MODEL", ""), env("MOAT_EFFORT", ""), env("MOAT_MODE", "")
+	model, effort, mode := env("EREDO_MODEL", ""), env("EREDO_EFFORT", ""), env("EREDO_MODE", "")
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		key, val, hasVal := a, "", false

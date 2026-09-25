@@ -12,7 +12,7 @@ func pickName(name string) (string, error) {
 	if name != "" {
 		return name, nil
 	}
-	list := dockerOut("ps", "--filter", "label=moat.role=sandbox", "--format", "{{.Label \"moat.project\"}}\t{{.Status}}\t{{.Label \"moat.workspace\"}}")
+	list := dockerOut("ps", "--filter", "label=eredo.role=sandbox", "--format", "{{.Label \"eredo.project\"}}\t{{.Status}}\t{{.Label \"eredo.workspace\"}}")
 	if list == "" {
 		return "", fmt.Errorf("no running sandboxes")
 	}
@@ -59,14 +59,14 @@ func cmdAttach(args []string) error {
 func attachTo(name string, claudeFlags []string) error {
 	sbx := sb(name)
 	if !running(sbx) {
-		return fmt.Errorf("%s is not running (try: moat up <dir>)", sbx)
+		return fmt.Errorf("%s is not running (try: eredo up <dir>)", sbx)
 	}
 	token, err := oauthToken()
 	if err != nil {
 		return err
 	}
 	args := []string{"exec", "-it", "-e", "CLAUDE_CODE_OAUTH_TOKEN=" + token}
-	args = append(args, gitIdentityEnv(label(sbx, "moat.workspace"))...)
+	args = append(args, gitIdentityEnv(label(sbx, "eredo.workspace"))...)
 	args = append(args, sbx, "bash", "-c", `clear; exec claude "$@"`, "claude")
 	args = append(args, claudeFlags...)
 	_ = dockerTTY(args...)
@@ -80,7 +80,7 @@ func cmdShell(args []string) error {
 	}
 	sbx := sb(name)
 	a := []string{"exec", "-it"}
-	a = append(a, gitIdentityEnv(label(sbx, "moat.workspace"))...)
+	a = append(a, gitIdentityEnv(label(sbx, "eredo.workspace"))...)
 	a = append(a, sbx, "zsh")
 	_ = dockerTTY(a...)
 	return nil
@@ -101,8 +101,8 @@ func cmdRestart(args []string) error {
 }
 
 func cmdPs() error {
-	return dockerTTY("ps", "-a", "--filter", "label=moat.role=sandbox",
-		"--format", "table {{.Label \"moat.project\"}}\t{{.Status}}\t{{.Label \"moat.workspace\"}}")
+	return dockerTTY("ps", "-a", "--filter", "label=eredo.role=sandbox",
+		"--format", "table {{.Label \"eredo.project\"}}\t{{.Status}}\t{{.Label \"eredo.workspace\"}}")
 }
 
 func cmdAudit(args []string) error {
@@ -136,8 +136,8 @@ func cmdAudit(args []string) error {
 func cmdReload() error {
 	n := 0
 	settings, _ := configBytes("settings.json")
-	for _, c := range strings.Fields(dockerOut("ps", "-q", "--filter", "label=moat.role=sandbox")) {
-		name, ws := label(c, "moat.project"), label(c, "moat.workspace")
+	for _, c := range strings.Fields(dockerOut("ps", "-q", "--filter", "label=eredo.role=sandbox")) {
+		name, ws := label(c, "eredo.project"), label(c, "eredo.workspace")
 		if _, err := allowlistDir(name, ws); err != nil {
 			return err
 		}

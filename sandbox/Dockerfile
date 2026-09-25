@@ -2,7 +2,7 @@
 #
 # Deliberately has no sudo, no iptables and no network tooling: egress is
 # enforced outside this container by the proxy sidecar (../proxy) and the
-# internal Docker network that moat creates. Nothing running in here
+# internal Docker network that eredo creates. Nothing running in here
 # can loosen that.
 FROM node:22-bookworm
 
@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /usr/local/share/npm-global && chown -R node:node /usr/local/share
 
-# Persisted zsh history (named volume mounted here by moat)
+# Persisted zsh history (named volume mounted here by eredo)
 RUN mkdir -p /commandhistory && touch /commandhistory/.zsh_history && chown -R node:node /commandhistory
 
 RUN mkdir -p /home/node/.claude /home/node/.local/bin /home/node/.local/share && \
@@ -40,9 +40,9 @@ RUN mkdir -p /home/node/.claude /home/node/.local/bin /home/node/.local/share &&
 
 # PreToolUse hook that appends every tool call to ~/.claude/audit.log, and the
 # status line that marks the session as sandboxed.
-COPY audit-hook.sh /usr/local/bin/moat-audit-hook
-COPY statusline.sh /usr/local/bin/moat-statusline
-RUN chmod 0755 /usr/local/bin/moat-audit-hook /usr/local/bin/moat-statusline
+COPY audit-hook.sh /usr/local/bin/eredo-audit-hook
+COPY statusline.sh /usr/local/bin/eredo-statusline
+RUN chmod 0755 /usr/local/bin/eredo-audit-hook /usr/local/bin/eredo-statusline
 
 USER node
 
@@ -62,6 +62,6 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
   -x
 
 # Claude Code via the native installer. Auto-update is disabled at runtime;
-# rebuild the image (moat build) to update.
+# rebuild the image (eredo build) to update.
 ARG CLAUDE_CODE_VERSION=latest
 RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_CODE_VERSION}"

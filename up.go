@@ -35,7 +35,7 @@ func cmdUp(args []string) error {
 		}
 	}
 	if len(paths) == 0 {
-		return fmt.Errorf("usage: moat up [--rw] [--rebuild] [--no-attach] <primary> [extra-repo ...]")
+		return fmt.Errorf("usage: eredo up [--rw] [--rebuild] [--no-attach] <primary> [extra-repo ...]")
 	}
 	primary, err := absDir(paths[0])
 	if err != nil {
@@ -50,7 +50,7 @@ func cmdUp(args []string) error {
 		extras = append(extras, p)
 	}
 
-	name := env("MOAT_NAME", filepath.Base(primary))
+	name := env("EREDO_NAME", filepath.Base(primary))
 	sbx, prx, nw := sb(name), px(name), net(name)
 	rwInt := 0
 	if rw {
@@ -72,12 +72,12 @@ func cmdUp(args []string) error {
 
 	// Two repos with the same directory name would otherwise fight over one sandbox.
 	if exists(sbx) {
-		if other := label(sbx, "moat.workspace"); other != primary {
-			return fmt.Errorf("sandbox name '%s' is in use by %s; set MOAT_NAME=<name> or run: moat clean %s", name, other, name)
+		if other := label(sbx, "eredo.workspace"); other != primary {
+			return fmt.Errorf("sandbox name '%s' is in use by %s; set EREDO_NAME=<name> or run: eredo clean %s", name, other, name)
 		}
 	}
 	// Reuse an existing sandbox when its mounts are unchanged.
-	if exists(sbx) && !rebuild && label(sbx, "moat.spec") == spec {
+	if exists(sbx) && !rebuild && label(sbx, "eredo.spec") == spec {
 		if !running(sbx) {
 			info("Starting %s", sbx)
 			if err := dockerRun("start", prx, sbx); err != nil {
@@ -112,11 +112,11 @@ func cmdUp(args []string) error {
 	sandboxImg, proxyImg := imageNames()
 	info("Starting proxy %s (allowlist: %s)", prx, filepath.Join(adir, "allowlist.txt"))
 	if err := dockerRun("create", "--name", prx,
-		"--label", labelKey+"=1", "--label", "moat.role=proxy", "--label", "moat.project="+name,
+		"--label", labelKey+"=1", "--label", "eredo.role=proxy", "--label", "eredo.project="+name,
 		"--network", nw, "--network-alias", "proxy",
 		"--add-host", "host.docker.internal:host-gateway",
-		"--mount", "type=bind,source="+adir+",target=/etc/moat,readonly",
-		"-e", "FORWARD="+os.Getenv("MOAT_FORWARD"),
+		"--mount", "type=bind,source="+adir+",target=/etc/eredo,readonly",
+		"-e", "FORWARD="+os.Getenv("EREDO_FORWARD"),
 		proxyImg); err != nil {
 		return err
 	}
@@ -145,15 +145,15 @@ func cmdUp(args []string) error {
 
 	info("Starting sandbox %s", sbx)
 	runArgs := []string{"run", "-d", "--name", sbx,
-		"--label", labelKey + "=1", "--label", "moat.role=sandbox", "--label", "moat.project=" + name,
-		"--label", "moat.workspace=" + primary, "--label", "moat.spec=" + spec,
+		"--label", labelKey + "=1", "--label", "eredo.role=sandbox", "--label", "eredo.project=" + name,
+		"--label", "eredo.workspace=" + primary, "--label", "eredo.spec=" + spec,
 		"--network", nw,
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--init", "--pids-limit", "4096",
 		"--user", "node", "--workdir", cprimary}
 	runArgs = append(runArgs, mounts...)
 	runArgs = append(runArgs,
-		"--mount", "type=volume,source=moat-"+name+"-config,target=/home/node/.claude",
-		"--mount", "type=volume,source=moat-"+name+"-history,target=/commandhistory",
+		"--mount", "type=volume,source=eredo-"+name+"-config,target=/home/node/.claude",
+		"--mount", "type=volume,source=eredo-"+name+"-history,target=/commandhistory",
 		"-e", "HTTP_PROXY="+proxyURL, "-e", "HTTPS_PROXY="+proxyURL,
 		"-e", "http_proxy="+proxyURL, "-e", "https_proxy="+proxyURL,
 		"-e", "NO_PROXY=proxy,localhost,127.0.0.1", "-e", "no_proxy=proxy,localhost,127.0.0.1",

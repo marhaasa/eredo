@@ -7,7 +7,7 @@ import (
 )
 
 // cmdClean removes one project's sandbox, proxy and network, or all of them,
-// including the claude-* generation this tool grew out of. --volumes drops
+// including the moat-* and claude-* generations this tool grew out of. --volumes drops
 // the config and history volumes too.
 func cmdClean(args []string) error {
 	volumes, name := false, ""
@@ -33,14 +33,14 @@ func cmdClean(args []string) error {
 		}
 		return all
 	}
-	for _, c := range ids("container", "label="+labelKey+"=1", "label=claude.sandbox=1", "label=devcontainer.local_folder", "name=claude-multi-") {
+	for _, c := range ids("container", "label="+labelKey+"=1", "label=moat.sandbox=1", "label=claude.sandbox=1", "label=devcontainer.local_folder", "name=claude-multi-") {
 		dockerOK("rm", "-f", c)
 	}
-	for _, n := range ids("network", "label="+labelKey+"=1", "label=claude.sandbox=1") {
+	for _, n := range ids("network", "label="+labelKey+"=1", "label=moat.sandbox=1", "label=claude.sandbox=1") {
 		dockerOK("network", "rm", n)
 	}
 	if volumes {
-		re := regexp.MustCompile(`^(moat|claude)-.*-(config|history)$|^claude-(code-config|code-bashhistory|multi-config)-`)
+		re := regexp.MustCompile(`^(eredo|moat|claude)-.*-(config|history)$|^claude-(code-config|code-bashhistory|multi-config)-`)
 		for _, v := range strings.Fields(dockerOut("volume", "ls", "-q")) {
 			if re.MatchString(v) {
 				dockerOK("volume", "rm", v)
@@ -55,10 +55,12 @@ func cmdClean(args []string) error {
 
 func cleanProject(name string, volumes bool) {
 	removeProject(name)
-	dockerOK("rm", "-f", "claude-"+name, "claude-"+name+"-proxy")
-	dockerOK("network", "rm", "claude-"+name+"-net")
+	for _, old := range []string{"moat", "claude"} {
+		dockerOK("rm", "-f", old+"-"+name, old+"-"+name+"-proxy")
+		dockerOK("network", "rm", old+"-"+name+"-net")
+	}
 	if volumes {
-		for _, v := range []string{"moat-" + name + "-config", "moat-" + name + "-history", "claude-" + name + "-config", "claude-" + name + "-history"} {
+		for _, v := range []string{"eredo-" + name + "-config", "eredo-" + name + "-history", "moat-" + name + "-config", "moat-" + name + "-history", "claude-" + name + "-config", "claude-" + name + "-history"} {
 			dockerOK("volume", "rm", v)
 		}
 	}

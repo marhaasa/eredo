@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Docker Sandboxes twin of moat, for a like-for-like comparison.
+# Docker Sandboxes twin of eredo, for a like-for-like comparison.
 #
 # Same commands, same proxy/allowlist.txt, settings.json, plugins.txt and audit
 # hook. What differs is underneath: each sandbox is one of Docker's microVMs,
@@ -7,16 +7,16 @@
 # (default deny, Docker's own built-in allow rules blocked), and the Claude
 # credential never enters the sandbox: run /login once inside, Docker keeps
 # the session token on the host. On top of that this script applies the same
-# hardening moat has by construction: passwordless root and the Docker
+# hardening eredo has by construction: passwordless root and the Docker
 # socket are taken away from the agent user, .git/hooks and .git/config are
 # masked, git identity is taken from the host, permissions prompt again.
 #
-#   moat-docker up [--rw] [--no-attach] [claude opts] <primary> [extra-repo ...]
-#   moat-docker attach [name] [claude opts]   (--model M, --effort E, --mode P)
-#   moat-docker shell [name]
-#   moat-docker restart [name]     moat-docker ps
-#   moat-docker audit [name]       moat-docker reload
-#   moat-docker clean
+#   eredo-docker up [--rw] [--no-attach] [claude opts] <primary> [extra-repo ...]
+#   eredo-docker attach [name] [claude opts]   (--model M, --effort E, --mode P)
+#   eredo-docker shell [name]
+#   eredo-docker restart [name]     eredo-docker ps
+#   eredo-docker audit [name]       eredo-docker reload
+#   eredo-docker clean
 set -euo pipefail
 
 self="${BASH_SOURCE[0]}"
@@ -25,7 +25,7 @@ while [ -L "$self" ]; do  # follow symlinks so a link on PATH finds lib.sh
   case "$self" in /*) ;; *) self="$d/$self" ;; esac
 done
 HERE="$(cd "$(dirname "$self")" && pwd)"; unset self d
-TOOL="moat-docker"
+TOOL="eredo-docker"
 # shellcheck source=lib.sh
 . "$HERE/lib.sh"
 # Allow rules Docker bakes into the template's network policy (seen in
@@ -38,8 +38,8 @@ LOGIN_HOSTS=(platform.claude.com console.anthropic.com)
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
 
-sb() { printf 'moat-%s' "$1"; }
-ls_sandboxes() { docker sandbox ls 2>/dev/null | awk 'NR>1 && $1 ~ /^moat-/'; }
+sb() { printf 'eredo-%s' "$1"; }
+ls_sandboxes() { docker sandbox ls 2>/dev/null | awk 'NR>1 && $1 ~ /^eredo-/'; }
 status_of()    { ls_sandboxes | awk -v n="$1" '$1==n {print $3}'; }
 workspace_of() { ls_sandboxes | awk -v n="$1" '$1==n {$1=$2=$3=""; sub(/^ +/, ""); print}'; }
 exists()       { [ -n "$(status_of "$1")" ]; }
@@ -51,7 +51,7 @@ XRI() { docker sandbox exec -i -u root "$1" sh -c "$2"; }
 
 pick_name() {
   if [ -n "${1:-}" ]; then printf '%s' "$1"; return; fi
-  local list; list="$(ls_sandboxes | awk '{print $1}' | sed 's/^moat-//')"
+  local list; list="$(ls_sandboxes | awk '{print $1}' | sed 's/^eredo-//')"
   [ -n "$list" ] || die "no sandboxes"
   if [ "$(printf '%s\n' "$list" | wc -l | tr -d ' ')" -eq 1 ]; then printf '%s' "$list"
   else need fzf; printf '%s\n' "$list" | fzf --header 'Select sandbox' --height 10 --reverse; fi
@@ -60,7 +60,7 @@ pick_name() {
 # Translate the merged allowlist (squid dstdomain lines) into Docker proxy rules.
 apply_policy() {  # <sandbox> <primary>
   local sbx="$1" line host
-  local list; list="$(allowlist_dir "${sbx#moat-}" "$2")/allowlist.txt"
+  local list; list="$(allowlist_dir "${sbx#eredo-}" "$2")/allowlist.txt"
   local args=(--policy deny) allowed=" "
   while IFS= read -r line; do
     line="${line%%#*}"; line="$(printf '%s' "$line" | tr -d '[:space:]')"
@@ -80,7 +80,7 @@ apply_policy() {  # <sandbox> <primary>
   docker sandbox network proxy "$sbx" "${args[@]}" >/dev/null
 }
 
-# Try to mask .git/hooks and .git/config as moat does. As of Docker
+# Try to mask .git/hooks and .git/config as eredo does. As of Docker
 # sandbox v0.12 this fails: the workspace share refuses mounts even for a
 # privileged root exec, so the masks are attempted, never relied upon.
 apply_git_masks() {
@@ -101,10 +101,10 @@ prepare() {
   local sbx="$1" primary="$2" rw="$3"; shift 3
   local extras=("$@") e
 
-  XRI "$sbx" 'cat > /usr/local/bin/moat-audit-hook && chmod 755 /usr/local/bin/moat-audit-hook' < "$HOOK"
-  XRI "$sbx" 'cat > /usr/local/bin/moat-statusline && chmod 755 /usr/local/bin/moat-statusline' < "$HERE/sandbox/statusline.sh"
+  XRI "$sbx" 'cat > /usr/local/bin/eredo-audit-hook && chmod 755 /usr/local/bin/eredo-audit-hook' < "$HOOK"
+  XRI "$sbx" 'cat > /usr/local/bin/eredo-statusline && chmod 755 /usr/local/bin/eredo-statusline' < "$HERE/sandbox/statusline.sh"
   # Docker's `run` takes no env; the persistent env file it sources does the job.
-  X "$sbx" "grep -q '^export CLAUDE_PROJECT_NAME=' /etc/sandbox-persistent.sh 2>/dev/null || echo 'export CLAUDE_PROJECT_NAME=${sbx#moat-}' >> /etc/sandbox-persistent.sh"
+  X "$sbx" "grep -q '^export CLAUDE_PROJECT_NAME=' /etc/sandbox-persistent.sh 2>/dev/null || echo 'export CLAUDE_PROJECT_NAME=${sbx#eredo-}' >> /etc/sandbox-persistent.sh"
   XI  "$sbx" 'cat > "$HOME/.claude/settings.json"' < "$SETTINGS"
 
   local gname gemail
@@ -164,7 +164,7 @@ cmd_up() {
       *) break ;;
     esac
   done
-  [ $# -ge 1 ] || die "usage: moat-docker up [--rw] [--no-attach] <primary> [extra-repo ...]"
+  [ $# -ge 1 ] || die "usage: eredo-docker up [--rw] [--no-attach] <primary> [extra-repo ...]"
   need docker
   local primary; primary="$(cd "$1" 2>/dev/null && pwd -P)" || die "not a directory: $1"; shift
   local extras=() e
@@ -172,7 +172,7 @@ cmd_up() {
   local name sbx; name="$(basename "$primary")"; sbx="$(sb "$name")"
   local spec="v1 $primary rw=$rw ${extras[*]-}"
 
-  if exists "$sbx" && [ "$(X "$sbx" 'cat "$HOME/.claude/.moat-spec" 2>/dev/null')" != "$spec" ]; then
+  if exists "$sbx" && [ "$(X "$sbx" 'cat "$HOME/.claude/.eredo-spec" 2>/dev/null')" != "$spec" ]; then
     info "Recreating $sbx (mounts changed)"
     docker sandbox rm "$sbx" >/dev/null
   fi
@@ -185,7 +185,7 @@ cmd_up() {
 
   apply_policy "$sbx" "$primary"
   prepare "$sbx" "$primary" "$rw" ${extras[@]+"${extras[@]}"}
-  X "$sbx" "printf '%s' '$spec' > \"\$HOME/.claude/.moat-spec\""
+  X "$sbx" "printf '%s' '$spec' > \"\$HOME/.claude/.eredo-spec\""
   [ $attach -eq 1 ] && cmd_attach "$name"
   return 0
 }
@@ -194,7 +194,7 @@ cmd_attach() {
   [ $# -gt 0 ] && { parse_claude_opts "$@"; set -- ${REST[@]+"${REST[@]}"}; }
   local name; name="$(pick_name "${1:-}")" || return 0
   local sbx; sbx="$(sb "$name")"
-  exists "$sbx" || die "$sbx does not exist (moat-docker up <dir>)"
+  exists "$sbx" || die "$sbx does not exist (eredo-docker up <dir>)"
   info "First time only: run /login inside. Docker keeps the session token on the host."
   if [ ${#CLAUDE_ARGS[@]} -gt 0 ]; then docker sandbox run "$sbx" -- "${CLAUDE_ARGS[@]}" || true
   else docker sandbox run "$sbx" || true; fi
@@ -235,5 +235,5 @@ case "${1:-help}" in
   reload)  cmd_reload ;;
   clean)   cmd_clean ;;
   help|-h|--help) usage ;;
-  *) die "unknown command: $1 (see moat-docker help)" ;;
+  *) die "unknown command: $1 (see eredo-docker help)" ;;
 esac

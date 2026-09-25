@@ -33,7 +33,7 @@ func cmdDoctor(args []string) int {
 		if dockerOK("image", "inspect", img) {
 			ok("image %s", img)
 		} else {
-			warn("image %s not built (moat build)", img)
+			warn("image %s not built (eredo build)", img)
 		}
 	}
 	if _, err := exec.LookPath("git"); err == nil {
@@ -54,10 +54,10 @@ func cmdDoctor(args []string) int {
 
 	name := first(args)
 	if name == "" {
-		name = first(strings.Fields(dockerOut("ps", "--filter", "label=moat.role=sandbox", "--format", "{{.Label \"moat.project\"}}")))
+		name = first(strings.Fields(dockerOut("ps", "--filter", "label=eredo.role=sandbox", "--format", "{{.Label \"eredo.project\"}}")))
 	}
 	if name == "" {
-		fmt.Println("\nno running sandbox to check (start one: moat up <dir>)")
+		fmt.Println("\nno running sandbox to check (start one: eredo up <dir>)")
 		return fails
 	}
 	sbx, prx := sb(name), px(name)
@@ -115,7 +115,7 @@ func cmdDoctor(args []string) int {
 	} else {
 		ok("private addresses blocked")
 	}
-	ws := containerPath(label(sbx, "moat.workspace"))
+	ws := containerPath(label(sbx, "eredo.workspace"))
 	if out("pwd") == ws {
 		ok("workspace at its host path %s", ws)
 	} else {
@@ -140,7 +140,7 @@ func cmdDoctor(args []string) int {
 	} else {
 		bad("settings.json missing")
 	}
-	if X("test -x /usr/local/bin/moat-audit-hook && test -x /usr/local/bin/moat-statusline") {
+	if X("test -x /usr/local/bin/eredo-audit-hook && test -x /usr/local/bin/eredo-statusline") {
 		ok("audit hook and status line installed")
 	} else {
 		bad("audit hook or status line missing")
@@ -168,7 +168,7 @@ func cmdSelftest() error {
 	if err := ensureImages(); err != nil {
 		return err
 	}
-	tmp, err := os.MkdirTemp("", "moat-selftest")
+	tmp, err := os.MkdirTemp("", "eredo-selftest")
 	if err != nil {
 		return err
 	}

@@ -8,7 +8,7 @@ import (
 )
 
 const trustScript = `import json, os, pathlib
-ws = os.environ['MOAT_WS']
+ws = os.environ['EREDO_WS']
 p = pathlib.Path('/home/node/.claude/.claude.json')
 d = json.loads(p.read_text()) if p.exists() else {}
 d['hasCompletedOnboarding'] = True
@@ -29,18 +29,18 @@ done`
 // install settings, the skill, safe.directory entries, MCP servers, plugins,
 // and a CLAUDE.md describing extra mounts. Idempotent.
 func bootstrap(c string, rw bool, extras []string) error {
-	primary := label(c, "moat.workspace")
+	primary := label(c, "eredo.workspace")
 	cprimary := containerPath(primary)
 
-	if err := dockerStdin([]byte(trustScript), "exec", "-i", "-e", "MOAT_WS="+cprimary, c, "python3", "-"); err != nil {
+	if err := dockerStdin([]byte(trustScript), "exec", "-i", "-e", "EREDO_WS="+cprimary, c, "python3", "-"); err != nil {
 		return err
 	}
 	settings, _ := configBytes("settings.json")
 	if err := dockerStdin(settings, "exec", "-i", c, "sh", "-c", "cat > /home/node/.claude/settings.json"); err != nil {
 		return err
 	}
-	skill, _ := assets.ReadFile("skills/moat/SKILL.md")
-	if err := dockerStdin(skill, "exec", "-i", c, "sh", "-c", "mkdir -p /home/node/.claude/skills/moat && cat > /home/node/.claude/skills/moat/SKILL.md"); err != nil {
+	skill, _ := assets.ReadFile("skills/eredo/SKILL.md")
+	if err := dockerStdin(skill, "exec", "-i", c, "sh", "-c", "mkdir -p /home/node/.claude/skills/eredo && cat > /home/node/.claude/skills/eredo/SKILL.md"); err != nil {
 		return err
 	}
 

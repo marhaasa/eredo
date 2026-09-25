@@ -1,3 +1,3 @@
-module github.com/marhaasa/moat
+module github.com/marhaasa/eredo
 
 go 1.27

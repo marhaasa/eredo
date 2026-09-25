@@ -1,7 +1,7 @@
 name: ci
 on:
   push:
-    branches: [main, go]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-      - run: shellcheck -x moat-docker lib.sh sandbox/audit-hook.sh sandbox/statusline.sh proxy/entrypoint.sh
+      - run: shellcheck -x eredo-docker lib.sh sandbox/audit-hook.sh sandbox/statusline.sh proxy/entrypoint.sh
 
   selftest:
     runs-on: ubuntu-latest
@@ -35,8 +35,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go build -o moat .
+      - run: go build -o eredo .
       - name: build images from the embedded sources
-        run: ./moat build
+        run: ./eredo build
       - name: start a scratch sandbox and run every doctor check against it
-        run: ./moat selftest
+        run: ./eredo selftest

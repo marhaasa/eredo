@@ -1,4 +1,4 @@
 # Claude Code plugins to install on first start, one per line, e.g.
 #   context7@claude-plugins-official
-# Override with ~/.config/moat/plugins.txt. Plugins that talk to
+# Override with ~/.config/eredo/plugins.txt. Plugins that talk to
 # remote MCP servers need their domains in the allowlist.

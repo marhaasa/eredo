@@ -11,7 +11,7 @@ if [ -n "${FORWARD:-}" ]; then
 fi
 
 echo "allowlist:"
-grep -vE '^[[:space:]]*(#|$)' /etc/moat/allowlist.txt | sed 's/^/  /'
+grep -vE '^[[:space:]]*(#|$)' /etc/eredo/allowlist.txt | sed 's/^/  /'
 
 # Stream the access log to the container's stdout for `docker logs` / audit.
 mkdir -p /var/log/squid && touch /var/log/squid/access.log && chown -R squid:squid /var/log/squid

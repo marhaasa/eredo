@@ -1,12 +1,15 @@
 # Claude Code sandboxes: how the two setups differ
 
+(eredo is named after Sungbo's Eredo, the great ditch-and-wall earthwork
+around Ijebu Ode in Nigeria; see the README.)
+
 Both commands run Claude Code against a repo you keep working on from the
 host with your own editor, git and credentials. They answer different
 questions:
 
-- `moat` answers *what is the agent allowed to do?* It is policy inside
+- `eredo` answers *what is the agent allowed to do?* It is policy inside
   a container you control completely.
-- `moat-docker` answers *what if the agent fully compromises its
+- `eredo-docker` answers *what if the agent fully compromises its
   environment?* It is a microVM boundary with the credential kept outside.
 
 Everything below was verified on 2026-09-24 with Docker Desktop 29.x and the
@@ -14,7 +17,7 @@ Everything below was verified on 2026-09-24 with Docker Desktop 29.x and the
 
 ## 1. Topology
 
-### moat: container plus proxy sidecar
+### eredo: container plus proxy sidecar
 
 ```mermaid
 flowchart TB
@@ -23,16 +26,16 @@ flowchart TB
     you["you: editor, git push,<br/>credentials"]
     repo[("~/src/project")]
     kc["Keychain:<br/>Claude OAuth token"]
-    script["moat"]
+    script["eredo"]
     you --> repo
   end
   subgraph vm["Docker VM (Desktop) or host kernel (Linux Engine)"]
     direction LR
-    subgraph inet["moat-project-net: internal, no gateway"]
-      sbx["moat-project<br/>node user, cap-drop ALL, no sudo<br/>HTTPS_PROXY=proxy:3128"]
-      px["moat-project-proxy<br/>squid: CONNECT :443<br/>to allowlist only"]
+    subgraph inet["eredo-project-net: internal, no gateway"]
+      sbx["eredo-project<br/>node user, cap-drop ALL, no sudo<br/>HTTPS_PROXY=proxy:3128"]
+      px["eredo-project-proxy<br/>squid: CONNECT :443<br/>to allowlist only"]
     end
-    egress["moat-egress network"]
+    egress["eredo-egress network"]
     sbx -- "CONNECT api.anthropic.com" --> px --> egress
   end
   net["internet: allowlisted domains"]
@@ -47,7 +50,7 @@ The sandbox has no route to the internet at all. The only thing it can reach
 is the proxy, and the proxy owns the allowlist. Nothing running inside can
 widen it, because there is no sudo, no capability and no iptables to touch.
 
-### moat-docker: microVM plus Docker's host proxy
+### eredo-docker: microVM plus Docker's host proxy
 
 ```mermaid
 flowchart TB
@@ -57,11 +60,11 @@ flowchart TB
     repo[("~/src/project")]
     cred["Claude session token<br/>stored by Docker after /login"]
     dproxy["Docker host proxy<br/>default deny + allowlist<br/>TLS interception,<br/>credential injection"]
-    script["moat-docker"]
+    script["eredo-docker"]
     you --> repo
     cred --> dproxy
   end
-  subgraph mvm["microVM moat-project: own kernel"]
+  subgraph mvm["microVM eredo-project: own kernel"]
     agent["claude<br/>agent user, sudo removed by the script<br/>HTTPS_PROXY=host.docker.internal:3128"]
   end
   net["internet: allowlisted domains"]
@@ -74,19 +77,19 @@ flowchart TB
 
 Docker ships this with an allow-all policy, passwordless root, a Docker
 daemon inside and Claude in bypassPermissions mode. The script replaces all of
-that with the same allowlist, settings and privileges moat has, so the
+that with the same allowlist, settings and privileges eredo has, so the
 remaining differences are the ones Docker's design forces.
 
 ## 2. Where a compromise ends up
 
 ```mermaid
 flowchart TB
-  subgraph A["moat"]
+  subgraph A["eredo"]
     direction TB
     a1["Claude process"] -->|"container escape"| a2["Docker VM<br/>every other container<br/>every shared host path"]
     a2 -->|"VM escape"| a3["host"]
   end
-  subgraph B["moat-docker"]
+  subgraph B["eredo-docker"]
     direction TB
     b1["Claude process"] -->|"container escape"| b2["microVM<br/>this project only"]
     b2 -->|"hypervisor escape"| b3["host"]
@@ -94,7 +97,7 @@ flowchart TB
 ```
 
 Both need two escapes to reach the host. The difference is what the first
-one lands in. In moat that is a kernel shared with everything else you run in
+one lands in. In eredo that is a kernel shared with everything else you run in
 Docker, plus whatever Docker Desktop's file sharing exposes, which is your
 whole home directory by default on macOS unless you narrow it. On Linux with
 Docker Engine there is no VM in between at all, so the first escape is the
@@ -105,7 +108,7 @@ project.
 
 ```mermaid
 sequenceDiagram
-  participant C as claude in moat
+  participant C as claude in eredo
   participant S as squid sidecar
   participant I as internet
   C->>S: CONNECT api.anthropic.com:443
@@ -118,7 +121,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant C as claude in moat-docker
+  participant C as claude in eredo-docker
   participant P as Docker host proxy
   participant I as internet
   C->>P: HTTPS api.anthropic.com, proxy CA trusted inside
@@ -146,18 +149,18 @@ sequenceDiagram
   H->>G: git log shows it immediately
   H->>H: git push with your own credentials
   Note over Cl,G: hazard: a hook or a config key written here runs on the host at your next git command
-  Note over G: moat: hooks are an empty read-only tmpfs, config a read-only bind
-  Note over G: moat-docker: writable, the sandbox refuses mounts over the workspace
+  Note over G: eredo: hooks are an empty read-only tmpfs, config a read-only bind
+  Note over G: eredo-docker: writable, the sandbox refuses mounts over the workspace
 ```
 
-This is the one place where moat is stronger for the commit-inside,
+This is the one place where eredo is stronger for the commit-inside,
 push-on-host workflow. In the Docker sandbox the only thing between Claude
 and a planted hook is the permission prompt, plus the Edit and Write deny
 rules under `.git` in settings.json.
 
 ## 5. Side by side
 
-| | moat | moat-docker |
+| | eredo | eredo-docker |
 | --- | --- | --- |
 | Boundary | container, cap-drop ALL, shared VM kernel | microVM with its own kernel |
 | First escape lands in | Docker Desktop VM | this project's VM |
@@ -174,7 +177,7 @@ rules under `.git` in settings.json.
 | Dependencies | Docker Desktop | Docker Desktop with the sandbox plugin |
 | Lines you own | about 600 | about 200 on top of Docker's product |
 
-## 6. The pattern moat replaces: a firewall inside the container
+## 6. The pattern eredo replaces: a firewall inside the container
 
 ```mermaid
 flowchart LR
@@ -186,7 +189,7 @@ flowchart LR
   c --> net["internet"]
 ```
 
-This is the reference devcontainer pattern and what moat grew out of. The
+This is the reference devcontainer pattern and what eredo grew out of. The
 enforcement point lives inside the thing being sandboxed, so one command
 removes it, and rules resolved from DNS at start go stale. Both designs above
 move enforcement outside the agent's reach.
@@ -194,9 +197,9 @@ move enforcement outside the agent's reach.
 ## 7. Which one when
 
 - **Interactive work on private repos**, committing inside and pushing from
-  the host: moat. The `.git` masks, the allowlist you own and the
+  the host: eredo. The `.git` masks, the allowlist you own and the
   request-level log matter more than the VM boundary while you are watching.
 - **Unattended runs, untrusted code, tasks that need Docker or root inside,
-  or a credential the agent must use but must never hold**: moat-docker.
+  or a credential the agent must use but must never hold**: eredo-docker.
   The VM boundary and proxy-side credentials are exactly what you want when
   nobody is watching or the code is not yours.
