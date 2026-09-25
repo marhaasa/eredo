@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-      - run: shellcheck -x eredo-docker lib.sh sandbox/audit-hook.sh sandbox/statusline.sh proxy/entrypoint.sh
+      - run: shellcheck -x sandbox/audit-hook.sh sandbox/statusline.sh proxy/entrypoint.sh
 
   selftest:
     runs-on: ubuntu-latest

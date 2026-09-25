@@ -1,19 +1,21 @@
-# Claude Code sandboxes: how the two setups differ
+# eredo and Docker Sandboxes: how the two designs differ
 
 (eredo is named after Sungbo's Eredo, the great ditch-and-wall earthwork
 around Ijebu Ode in Nigeria; see the README.)
 
-Both commands run Claude Code against a repo you keep working on from the
-host with your own editor, git and credentials. They answer different
-questions:
+Both run Claude Code against a repo you keep working on from the host with
+your own editor, git and credentials. They answer different questions:
 
 - `eredo` answers *what is the agent allowed to do?* It is policy inside
   a container you control completely.
-- `eredo-docker` answers *what if the agent fully compromises its
+- Docker Sandboxes answer *what if the agent fully compromises its
   environment?* It is a microVM boundary with the credential kept outside.
 
 Everything below was verified on 2026-09-24 with Docker Desktop 29.x and the
-`docker sandbox` plugin v0.12.
+`docker sandbox` plugin v0.12, using `eredo-docker`, a twin script that ran
+eredo's allowlist, settings and plugins on Docker's sandbox and was retired in
+eredo 0.3.1. eredo 0.3 adds protections the twin could not have (read-only
+hook-manager and project Claude files, read-only policy).
 
 ## 1. Topology
 
@@ -50,7 +52,7 @@ The sandbox has no route to the internet at all. The only thing it can reach
 is the proxy, and the proxy owns the allowlist. Nothing running inside can
 widen it, because there is no sudo, no capability and no iptables to touch.
 
-### eredo-docker: microVM plus Docker's host proxy
+### Docker Sandboxes (with the twin's hardening): microVM plus Docker's host proxy
 
 ```mermaid
 flowchart TB
@@ -60,7 +62,7 @@ flowchart TB
     repo[("~/src/project")]
     cred["Claude session token<br/>stored by Docker after /login"]
     dproxy["Docker host proxy<br/>default deny + allowlist<br/>TLS interception,<br/>credential injection"]
-    script["eredo-docker"]
+    script["eredo-docker (retired)"]
     you --> repo
     cred --> dproxy
   end
@@ -89,7 +91,7 @@ flowchart TB
     a1["Claude process"] -->|"container escape"| a2["Docker VM<br/>every other container<br/>every shared host path"]
     a2 -->|"VM escape"| a3["host"]
   end
-  subgraph B["eredo-docker"]
+  subgraph B["Docker Sandboxes"]
     direction TB
     b1["Claude process"] -->|"container escape"| b2["microVM<br/>this project only"]
     b2 -->|"hypervisor escape"| b3["host"]
@@ -121,7 +123,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant C as claude in eredo-docker
+  participant C as claude in a Docker sandbox
   participant P as Docker host proxy
   participant I as internet
   C->>P: HTTPS api.anthropic.com, proxy CA trusted inside
@@ -150,7 +152,7 @@ sequenceDiagram
   H->>H: git push with your own credentials
   Note over Cl,G: hazard: a hook or a config key written here runs on the host at your next git command
   Note over G: eredo: hooks are an empty read-only tmpfs, config a read-only bind
-  Note over G: eredo-docker: writable, the sandbox refuses mounts over the workspace
+  Note over G: Docker Sandboxes: writable, the sandbox refuses mounts over the workspace
 ```
 
 This is the one place where eredo is stronger for the commit-inside,
@@ -160,7 +162,7 @@ rules under `.git` in settings.json.
 
 ## 5. Side by side
 
-| | eredo | eredo-docker |
+| | eredo | Docker Sandboxes (twin-hardened) |
 | --- | --- | --- |
 | Boundary | container, cap-drop ALL, shared VM kernel | microVM with its own kernel |
 | First escape lands in | Docker Desktop VM | this project's VM |
@@ -200,6 +202,6 @@ move enforcement outside the agent's reach.
   the host: eredo. The `.git` masks, the allowlist you own and the
   request-level log matter more than the VM boundary while you are watching.
 - **Unattended runs, untrusted code, tasks that need Docker or root inside,
-  or a credential the agent must use but must never hold**: eredo-docker.
+  or a credential the agent must use but must never hold**: Docker Sandboxes, directly.
   The VM boundary and proxy-side credentials are exactly what you want when
   nobody is watching or the code is not yours.

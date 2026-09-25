@@ -12,8 +12,6 @@ masks, and Claude's token injected per attach. `README.md` is the user guide,
   `skills/` are embedded into the binary, so it is the whole install and
   `eredo build` writes them to a temp dir to build the images. Windows is
   supported natively: host paths are mapped to `/c/...` inside the sandbox.
-- `eredo-docker` is still bash and sources `lib.sh`; it is the Docker
-  Sandboxes comparison twin, not the product.
 - `proxy/`: squid image, `allowlist.txt` shipped defaults.
 - `sandbox/`: Claude Code image, audit hook, status line.
 - `settings.json`, `plugins.txt`: shipped Claude Code defaults; users
@@ -28,7 +26,7 @@ masks, and Claude's token injected per attach. `README.md` is the user guide,
 - `./eredo selftest`: starts a scratch sandbox, runs every `doctor` check,
   removes it. Needs Docker running. This is what CI runs.
 - shellcheck for the remaining bash without installing it:
-  `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable -x eredo-docker lib.sh sandbox/*.sh proxy/entrypoint.sh`
+  `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable -x sandbox/*.sh proxy/entrypoint.sh`
 - `./eredo doctor <project>` against a real sandbox after changing isolation.
 
 ## Conventions

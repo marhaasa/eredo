@@ -79,6 +79,12 @@ Claude Code's own shape. Registered when a sandbox is created, or now with
 `EREDO_FORWARD=PORT:host.docker.internal:PORT` set before `eredo up` and the
 URL `http://proxy:PORT/...`; a remote server needs its domain allowed.
 
+**eredo or Docker Sandboxes?** For code that is not the user's, unattended
+runs, or tasks that need root or Docker inside, suggest Docker's own sandboxes
+(`docker sandbox` / `sbx`) instead; the README section "eredo and Docker
+Sandboxes" has the hardening commands. eredo is for interactive work on the
+user's own repos.
+
 **Why is X blocked?** `eredo audit <project>` shows the proxy decisions and
 every tool call. `eredo doctor <project>` runs the isolation checks.
 

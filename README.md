@@ -187,15 +187,45 @@ read-only managed settings, so nothing inside can rewrite its rules. Linked
 worktrees work: the shared `.git` is mounted at its host path with the same
 masks.
 
-## eredo-docker
+## eredo and Docker Sandboxes
 
-`eredo-docker` runs the same commands, allowlist, settings and plugins on
-Docker Desktop's own agent sandboxes (`docker sandbox`), a microVM per project
-with a host-side proxy and the credential kept outside the VM. It also
-removes the agent user's root and Docker access and restores permission
-prompts. What it cannot do is mask `.git`, since the sandbox refuses mounts
-over the workspace. `ARCHITECTURE.md` draws both designs and lists the
-differences.
+Docker Desktop ships its own agent sandboxes (`docker sandbox`, and the newer
+standalone `sbx` CLI): a microVM per project with a host-side proxy that keeps
+the credential outside the VM. eredo does not wrap them, but they are the right
+tool for some jobs, and a good option alongside eredo.
+
+**Use eredo** for interactive work on your own repos: commit inside, push from
+the host, with `.git` and other host-executed files read-only, a policy Claude
+cannot edit, an allowlist you own, the relay for host-only commands, and a log
+of every connection.
+
+**Use Docker Sandboxes** when the code is not yours, when nobody is watching,
+or when the task needs root or Docker inside. The microVM is a stronger
+boundary than a container, and the credential never enters it. The trade-off:
+it refuses mounts over the workspace, so it cannot protect `.git` or other
+files the host runs later, and it ships with open egress, root inside and
+permission prompts off. Review the diff before you run git on the host.
+
+To get closer to eredo's defaults there (this is what eredo 0.2's
+`eredo-docker` twin automated):
+
+```bash
+docker sandbox create --name claude-myrepo claude ~/src/myrepo
+# default deny; allow what you need; Docker's built-in allows only yield to host:port blocks
+docker sandbox network proxy claude-myrepo --policy deny \
+  --allow-host api.anthropic.com --allow-host platform.claude.com \
+  --allow-host github.com --allow-host '*.githubusercontent.com' --allow-host registry.npmjs.org \
+  --block-host pypi.org:443 --block-host ports.ubuntu.com:80 --block-host '*.docker.com:443'
+# take root and the Docker socket away from the agent user
+docker sandbox exec -u root claude-myrepo sh -c 'rm -f /etc/sudoers.d/*; gpasswd -d agent sudo; gpasswd -d agent docker'
+# restore permission prompts: copy eredo's settings.json in (run `eredo config init` for a copy)
+docker sandbox exec -i claude-myrepo sh -c 'cat > ~/.claude/settings.json' < ~/.config/eredo/settings.json
+docker sandbox run claude-myrepo      # /login once inside; Docker keeps the token on the host
+docker sandbox network log            # what it reached
+```
+
+`ARCHITECTURE.md` draws both designs and lists the differences, measured with
+that twin.
 
 ## Not covered
 
