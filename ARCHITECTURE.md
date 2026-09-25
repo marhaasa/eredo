@@ -36,7 +36,7 @@ flowchart TB
     sbx -- "CONNECT api.anthropic.com" --> px --> egress
   end
   net["internet: allowlisted domains"]
-  repo -. "bind mount rw<br/>.git/hooks = empty ro tmpfs<br/>.git/config = ro bind" .-> sbx
+  repo -. "bind mount rw at the host path<br/>.git/hooks = empty ro tmpfs<br/>.git/config = ro bind" .-> sbx
   kc -- "docker exec -e token,<br/>per attach" --> sbx
   script -- "creates, bootstraps" --> sbx
   script -- "allowlist" --> px

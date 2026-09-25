@@ -19,9 +19,9 @@ edit the moat repo itself for a personal change.
 ## First: where are you?
 
 - If `/usr/local/bin/moat-audit-hook` exists you are **inside a sandbox**. You
-  can only edit files in the workspace. Domains go in
-  `/workspace/.moat/allowlist.txt`; then tell the user to run `moat reload` on
-  the host. Everything else happens on the host, so give the exact command.
+  can only edit files in the mounted repo, which sits at the same path as on
+  the host. Domains go in the repo's `.moat/allowlist.txt`; then tell the user
+  to run `moat reload` on the host. Everything else happens on the host, so give the exact command.
 - Otherwise you are **on the host**. Run `moat config init` once: it creates
   `~/.config/moat` with copies of the shipped `settings.json` and
   `plugins.txt` and an empty `allowlist.txt`. Edit, then `moat reload`, which

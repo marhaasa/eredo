@@ -45,7 +45,7 @@ the skill.
 ```bash
 cd ~/src/project && moat           # first run builds the images (a few minutes), then starts and attaches
 moat up ~/src/project              # the same from anywhere
-moat up ~/src/app ~/src/lib        # extra repos read-only under /home/node/<name>; --rw for read-write
+moat up ~/src/app ~/src/lib        # extra repos, read-only at their host paths; --rw for read-write
 moat attach [name]                 # re-attach to a running sandbox
 moat up --model opus --effort low --mode plan ~/src/project   # per-run overrides
 moat shell [name]                  # a zsh inside
@@ -63,8 +63,10 @@ recognisable, on every platform and terminal.
 
 ## What is inside the moat
 
-- Only the repo you name, read-write at `/workspace`, plus any extras. Claude
-  Code config and shell history live in per-project named volumes.
+- Only the repo you name, read-write, plus any extras, each mounted at the
+  same path it has on the host so Claude's working directory and every path
+  it mentions match yours. Claude Code config and shell history live in
+  per-project named volumes.
 - The host OAuth token, injected per attach via `docker exec -e`; it is never
   stored in the container. Telemetry, error reporting, feature flags and
   auto-update are off, so `api.anthropic.com` is the only destination Claude

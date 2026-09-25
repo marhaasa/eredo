@@ -12,8 +12,8 @@
 #                          skill into ~/.claude/skills, so Claude can configure moat
 #   moat up [--rw] [--rebuild] [--no-attach] [claude opts] <primary> [extra-repo ...]
 #                     start (or reuse) the sandbox for <primary> and attach.
-#                     Extra repos are mounted read-only under /home/node/<name>
-#                     unless --rw is given. --no-attach just starts it.
+#                     Repos are mounted at the same paths as on the host; extras
+#                     read-only unless --rw is given. --no-attach just starts it.
 #   moat attach [name] [claude opts]
 #                     attach Claude Code to a running sandbox. Claude opts:
 #                     --model M, --effort E, --mode P (default, acceptEdits,
@@ -154,7 +154,7 @@ cmd_up() {
   local name sbx prx nw
   name="$(basename "$primary")"
   sbx="$(sb "$name")"; prx="$(px "$name")"; nw="$(net "$name")"
-  local spec="v5 $primary rw=$rw ${extras[*]-}"
+  local spec="v6 $primary rw=$rw ${extras[*]-}"
 
   ensure_docker
   [ $rebuild -eq 1 ] && cmd_build
@@ -189,13 +189,15 @@ cmd_up() {
   docker network connect "$EGRESS_NET" "$prx"
   docker start "$prx" >/dev/null
 
-  local mounts=(--mount "type=bind,source=$primary,target=/workspace")
-  add_git_masks "$primary" /workspace
+  # Same paths inside as on the host, so Claude's cwd, errors and file
+  # references read the same on both sides.
+  local mounts=(--mount "type=bind,source=$primary,target=$primary")
+  add_git_masks "$primary" "$primary"
   local ro=",readonly"
   [ $rw -eq 1 ] && ro=""
   for e in ${extras[@]+"${extras[@]}"}; do
-    mounts+=(--mount "type=bind,source=$e,target=/home/node/$(basename "$e")$ro")
-    [ $rw -eq 1 ] && add_git_masks "$e" "/home/node/$(basename "$e")"
+    mounts+=(--mount "type=bind,source=$e,target=$e$ro")
+    [ $rw -eq 1 ] && add_git_masks "$e" "$e"
   done
 
   info "Starting sandbox $sbx"
@@ -204,7 +206,7 @@ cmd_up() {
     --label "moat.workspace=$primary" --label "moat.spec=$spec" \
     --network "$nw" \
     --cap-drop ALL --security-opt no-new-privileges \
-    --user node --workdir /workspace \
+    --user node --workdir "$primary" \
     "${mounts[@]}" \
     --mount "type=volume,source=moat-$name-config,target=/home/node/.claude" \
     --mount "type=volume,source=moat-$name-history,target=/commandhistory" \
@@ -236,23 +238,25 @@ cmd_up() {
   return 0
 }
 
-# Configure a fresh sandbox: skip onboarding, trust /workspace, install
+# Configure a fresh sandbox: skip onboarding, trust the workspace, install
 # settings, plugins and any MCP servers listed in an optional mcp.json,
 # describe extra mounts in CLAUDE.md.
 cmd_bootstrap() {
   local c="$1"; shift
   local rw=0
   [ "${1:-}" = "--rw" ] && { rw=1; shift; }
+  local primary; primary="$(label "$c" moat.workspace)"
 
-  docker exec -i "$c" python3 - <<'PY'
-import json, pathlib
+  docker exec -i -e "MOAT_WS=$primary" "$c" python3 - <<'PY'
+import json, os, pathlib
+ws = os.environ['MOAT_WS']
 p = pathlib.Path('/home/node/.claude/.claude.json')
 d = json.loads(p.read_text()) if p.exists() else {}
 d['hasCompletedOnboarding'] = True
 d.setdefault('trustedDirectories', [])
-if '/workspace' not in d['trustedDirectories']:
-    d['trustedDirectories'].append('/workspace')
-d.setdefault('projects', {}).setdefault('/workspace', {})['hasTrustDialogAccepted'] = True
+if ws not in d['trustedDirectories']:
+    d['trustedDirectories'].append(ws)
+d.setdefault('projects', {}).setdefault(ws, {})['hasTrustDialogAccepted'] = True
 p.write_text(json.dumps(d))
 PY
 
@@ -261,9 +265,7 @@ PY
 
   # Bind mounts from a Windows filesystem show up root-owned; tell git inside
   # that the mounted repos are ours.
-  local safe=(/workspace) e
-  for e in "$@"; do safe+=("/home/node/$(basename "$e")"); done
-  git_safe_dirs "$c" "${safe[@]}"
+  git_safe_dirs "$c" "$primary" "$@"
 
   if [ -f "$MCP" ]; then
     docker exec -i "$c" bash -c '
@@ -297,8 +299,8 @@ PY
     local mode="read-only"
     [ $rw -eq 1 ] && mode="read-write"
     {
-      printf '# Multi-repo workspace\n\nPrimary workspace: /workspace (read-write)\n\nAdditional repos (%s):\n' "$mode"
-      for e in "$@"; do printf -- '- /home/node/%s\n' "$(basename "$e")"; done
+      printf '# Multi-repo workspace\n\nPrimary workspace: %s (read-write)\n\nAdditional repos (%s):\n' "$primary" "$mode"
+      for e in "$@"; do printf -- '- %s\n' "$e"; done
       printf '\nUse absolute paths when referencing files across repos.\n'
     } | docker exec -i "$c" sh -c 'cat > /home/node/.claude/CLAUDE.md'
   else
@@ -482,9 +484,11 @@ cmd_doctor() {
   if X 'curl --noproxy "*" -s --max-time 5 -o /dev/null https://api.anthropic.com/' 2>/dev/null; then bad "direct egress possible"; else ok "direct egress blocked"; fi
   if X 'curl -s --max-time 15 -o /dev/null https://api.anthropic.com/' 2>/dev/null; then ok "api.anthropic.com reachable through the proxy"; else bad "api.anthropic.com not reachable through the proxy"; fi
   if X 'curl -s --max-time 15 -o /dev/null https://example.com/' 2>/dev/null; then bad "unlisted domain reachable (allowlist not enforced)"; else ok "unlisted domain blocked"; fi
-  if X 'test -d /workspace/.git' 2>/dev/null; then
-    if X 'touch /workspace/.git/hooks/.doctor' 2>/dev/null; then bad ".git/hooks writable"; X 'rm -f /workspace/.git/hooks/.doctor' 2>/dev/null; else ok ".git/hooks read-only"; fi
-    if X 'git -C /workspace config doctor.probe 1' 2>/dev/null; then bad ".git/config writable"; X 'git -C /workspace config --unset doctor.probe' 2>/dev/null; else ok ".git/config read-only"; fi
+  local ws; ws="$(label "$sbx" moat.workspace)"
+  if [ "$(X 'pwd' 2>/dev/null)" = "$ws" ]; then ok "workspace at its host path $ws"; else bad "workspace path differs from host"; fi
+  if X "test -d '$ws/.git'" 2>/dev/null; then
+    if X "touch '$ws/.git/hooks/.doctor'" 2>/dev/null; then bad ".git/hooks writable"; X "rm -f '$ws/.git/hooks/.doctor'" 2>/dev/null; else ok ".git/hooks read-only"; fi
+    if X "git -C '$ws' config doctor.probe 1" 2>/dev/null; then bad ".git/config writable"; X "git -C '$ws' config --unset doctor.probe" 2>/dev/null; else ok ".git/config read-only"; fi
   fi
   if X 'test -s /home/node/.claude/settings.json' 2>/dev/null; then ok "settings.json installed"; else bad "settings.json missing"; fi
   if X 'test -x /usr/local/bin/moat-audit-hook && test -x /usr/local/bin/moat-statusline' 2>/dev/null; then ok "audit hook and status line installed"; else bad "audit hook or status line missing"; fi
