@@ -56,8 +56,6 @@ func cmdUp(args []string) error {
 	if rw {
 		rwInt = 1
 	}
-	spec := fmt.Sprintf("%s %s rw=%d %s", specVersion, primary, rwInt, strings.Join(extras, " "))
-
 	if err := ensureDocker(); err != nil {
 		return err
 	}
@@ -69,6 +67,7 @@ func cmdUp(args []string) error {
 	if err := ensureImages(); err != nil {
 		return err
 	}
+	spec := fmt.Sprintf("%s %s rw=%d img=%s %s", specVersion, primary, rwInt, imageIDs(), strings.Join(extras, " "))
 
 	// Two repos with the same directory name would otherwise fight over one sandbox.
 	if exists(sbx) {
@@ -131,7 +130,8 @@ func cmdUp(args []string) error {
 	// errors and file references read the same on both sides.
 	cprimary := containerPath(primary)
 	mounts := []string{"--mount", "type=bind,source=" + primary + ",target=" + cprimary}
-	mounts = append(mounts, gitMasks(primary, cprimary)...)
+	pm, notes := repoProtections(primary, cprimary)
+	mounts = append(mounts, pm...)
 	for _, e := range extras {
 		ro := ",readonly"
 		if rw {
@@ -139,9 +139,22 @@ func cmdUp(args []string) error {
 		}
 		mounts = append(mounts, "--mount", "type=bind,source="+e+",target="+containerPath(e)+ro)
 		if rw {
-			mounts = append(mounts, gitMasks(e, containerPath(e))...)
+			em, en := repoProtections(e, containerPath(e))
+			mounts = append(mounts, em...)
+			notes = append(notes, en...)
 		}
 	}
+
+	for _, n := range notes {
+		info("%s", n)
+	}
+	// Policy (permissions, hooks, status line) goes in Claude Code's managed
+	// settings, read-only, so nothing inside can rewrite its own rules.
+	claudeDir, err := writeManagedSettings(name)
+	if err != nil {
+		return err
+	}
+	mounts = append(mounts, "--mount", "type=bind,source="+claudeDir+",target=/etc/claude-code,readonly")
 
 	info("Starting sandbox %s", sbx)
 	runArgs := []string{"run", "-d", "--name", sbx,
@@ -161,6 +174,7 @@ func cmdUp(args []string) error {
 		"-e", "CLAUDE_PROJECT_NAME="+name,
 		"-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 		"-e", "DISABLE_TELEMETRY=1", "-e", "DISABLE_ERROR_REPORTING=1", "-e", "DISABLE_AUTOUPDATER=1",
+		"-e", "ENABLE_CLAUDEAI_MCP_SERVERS=false",
 		"-e", "NODE_OPTIONS=--max-old-space-size=4096",
 		sandboxImg, "sleep", "infinity")
 	if err := dockerRun(runArgs...); err != nil {
@@ -181,24 +195,6 @@ func cmdUp(args []string) error {
 		return attachTo(name, claudeFlags)
 	}
 	return nil
-}
-
-// gitMasks masks the two places under .git where a write would execute code
-// on the host the next time the user runs git there: hooks (empty read-only
-// tmpfs) and config (read-only bind). Everything else stays writable.
-func gitMasks(src, dst string) []string {
-	git := filepath.Join(src, ".git")
-	if !isDir(git) {
-		if _, err := os.Lstat(git); err == nil {
-			info("note: %s is not a directory (worktree or submodule): hooks and config are not masked", git)
-		}
-		return nil
-	}
-	m := []string{"--tmpfs", dst + "/.git/hooks:ro,size=64k"}
-	if cfg := filepath.Join(git, "config"); isFile(cfg) {
-		m = append(m, "--mount", "type=bind,source="+cfg+",target="+dst+"/.git/config,readonly")
-	}
-	return m
 }
 
 func removeProject(name string) {

@@ -2,3 +2,6 @@
 #   context7@claude-plugins-official
 # Override with ~/.config/eredo/plugins.txt. Plugins that talk to
 # remote MCP servers need their domains in the allowlist.
+#
+# A plugin from another marketplace needs that marketplace registered first:
+#   # marketplace: owner/repo

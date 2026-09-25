@@ -78,7 +78,9 @@ eredo up --model opus --effort low --mode plan ~/src/project   # per-run overrid
 eredo shell [name]                  # a zsh inside
 eredo audit [name]                  # every connection the proxy saw, every tool call Claude made
 eredo config init                   # copy the shipped settings and plugins to ~/.config/eredo for editing
-eredo reload                        # apply edited allowlists and settings to running sandboxes
+eredo reload                        # apply edited allowlists, settings and the relay list to running sandboxes
+eredo relay [name]                  # commands Claude queued for your host logins (az, gh, ...)
+eredo update                        # rebuild images with the newest Claude Code
 eredo doctor [name]                 # check the host and a running sandbox
 eredo clean [--volumes] [name]      # remove one or all sandboxes; --volumes drops config and history too
 eredo build --pull                  # update Claude Code (auto-update is off inside)
@@ -115,7 +117,7 @@ precedence first:
 | Where | What |
 | --- | --- |
 | `<repo>/.eredo/allowlist.txt` | extra domains for that repo only, merged in |
-| `~/.config/eredo/` (`EREDO_CONFIG`) | `allowlist.txt` is merged; `settings.json`, `plugins.txt` and `mcp.json` replace the shipped file |
+| `~/.config/eredo/` (`EREDO_CONFIG`) | `allowlist.txt` is merged; `settings.json`, `plugins.txt`, `relay.txt` and `mcp.json` replace the shipped file |
 | this repo | the defaults: Anthropic, GitHub and npm allowed, no plugins, default permission mode |
 
 Merged allowlists are written per project under `~/.local/state/eredo/`
@@ -153,6 +155,38 @@ commits. After changing repo config on the host, `eredo restart` picks up the
 new file. Claude asks before committing; allow `Bash(git add:*)` and
 `Bash(git commit:*)` in your settings override to let it commit freely.
 
+## Commands that need your credentials
+
+Claude inside has no cloud logins, so `az`, `aws`, `gcloud`, `gh` and `kubectl`
+cannot work there. When Claude runs one, eredo stops it before it runs, adds it
+to a queue and tells Claude it is waiting for you. In a second terminal:
+
+```bash
+eredo relay              # the queue, oldest first
+eredo relay --copy 3     # copy #3 to the clipboard (default: the latest)
+eredo relay --watch      # copy each new command as it arrives, with a bell
+eredo relay --clear
+```
+
+Read the command, run it yourself, and paste the output back if Claude needs
+it. Nothing runs on your machine automatically. The list is `relay.txt`:
+`eredo config init` copies it to `~/.config/eredo`, one command per line; an
+empty file turns the relay off; `eredo reload` applies it. A `settings.json`
+override must keep the PreToolUse group that runs `eredo-relay-hook`.
+
+## Files the host runs later
+
+Some files in a repo are executed or obeyed by the host after the session:
+git hooks and config, submodule git dirs, `core.hooksPath` targets and
+`include.path` files, hook managers (`.husky/`, `lefthook*.yml`,
+`.pre-commit-config.yaml`), and Claude Code's project settings
+(`.claude/settings*.json`, `.claude/hooks/`, `.mcp.json`). eredo mounts every
+one that exists read-only inside, and warns when a session creates one that did
+not exist. Claude's own policy (permissions, hooks, status line) lives in
+read-only managed settings, so nothing inside can rewrite its rules. Linked
+worktrees work: the shared `.git` is mounted at its host path with the same
+masks.
+
 ## eredo-docker
 
 `eredo-docker` runs the same commands, allowlist, settings and plugins on
@@ -169,6 +203,10 @@ differences.
   Anthropic API to produce responses. Keep secrets out of the mount.
 - Allowed domains are exfiltration channels. GitHub is allowed for cloning
   and plugins; the sandbox has no GitHub credentials, keep it that way.
+- Relayed commands are written by Claude, and the queue lives inside the
+  sandbox. Read each one before running it on the host, where your
+  credentials are. `eredo relay` shows control characters escaped and refuses
+  to copy them.
 - The proxy sees only hostnames, never URLs or content. It refuses private,
   loopback and link-local destinations even for allowlisted names, so
   `EREDO_FORWARD` is the only way to reach a host service.

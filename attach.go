@@ -65,11 +65,15 @@ func attachTo(name string, claudeFlags []string) error {
 	if err != nil {
 		return err
 	}
-	args := []string{"exec", "-it", "-e", "CLAUDE_CODE_OAUTH_TOKEN=" + token}
+	// `-e NAME` without a value: docker copies it from its own environment, so
+	// the token never appears in the host's process list.
+	args := []string{"exec", "-it", "-e", "CLAUDE_CODE_OAUTH_TOKEN"}
 	args = append(args, gitIdentityEnv(label(sbx, "eredo.workspace"))...)
 	args = append(args, sbx, "bash", "-c", `clear; exec claude "$@"`, "claude")
 	args = append(args, claudeFlags...)
-	_ = dockerTTY(args...)
+	missing := missingProtected(label(sbx, "eredo.workspace"))
+	_ = dockerTTYEnv([]string{"CLAUDE_CODE_OAUTH_TOKEN=" + token}, args...)
+	reportCreated(missing)
 	return nil
 }
 
@@ -115,7 +119,7 @@ func cmdAudit(args []string) error {
 	n := 0
 	for _, l := range strings.Split(string(logs), "\n") {
 		if strings.Contains(l, "TCP_") {
-			fmt.Println(l)
+			fmt.Println(sanitize(l))
 			n++
 		}
 	}
@@ -124,7 +128,7 @@ func cmdAudit(args []string) error {
 	}
 	fmt.Printf("\n== tool calls in %s ==\n", sb(name))
 	if out, err := execIn(sb(name), "cat /home/node/.claude/audit.log"); err == nil && out != "" {
-		fmt.Println(out)
+		fmt.Println(sanitize(out))
 	} else {
 		fmt.Println("(none)")
 	}
@@ -136,17 +140,24 @@ func cmdAudit(args []string) error {
 func cmdReload() error {
 	n := 0
 	settings, _ := configBytes("settings.json")
+	relayList := effectiveRelayNames(true)
+	if !relayHookRegistered() {
+		info("%s", relayNotRegistered)
+	}
 	for _, c := range strings.Fields(dockerOut("ps", "-q", "--filter", "label=eredo.role=sandbox")) {
 		name, ws := label(c, "eredo.project"), label(c, "eredo.workspace")
 		if _, err := allowlistDir(name, ws); err != nil {
 			return err
 		}
 		dockerOK("kill", "-s", "HUP", px(name))
-		if err := dockerStdin(settings, "exec", "-i", c, "sh", "-c", "cat > /home/node/.claude/settings.json"); err != nil {
+		if _, err := writeManagedSettingsBytes(name, settings); err != nil {
+			return err
+		}
+		if err := writeRelayList(c, relayList); err != nil {
 			return err
 		}
 		n++
 	}
-	info("reloaded allowlist and settings in %d sandbox(es)", n)
+	info("reloaded allowlist, settings and relay list in %d sandbox(es)", n)
 	return nil
 }

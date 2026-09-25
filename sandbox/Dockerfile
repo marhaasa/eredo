@@ -42,7 +42,8 @@ RUN mkdir -p /home/node/.claude /home/node/.local/bin /home/node/.local/share &&
 # status line that marks the session as sandboxed.
 COPY audit-hook.sh /usr/local/bin/eredo-audit-hook
 COPY statusline.sh /usr/local/bin/eredo-statusline
-RUN chmod 0755 /usr/local/bin/eredo-audit-hook /usr/local/bin/eredo-statusline
+COPY relay-hook.py /usr/local/bin/eredo-relay-hook
+RUN chmod 0755 /usr/local/bin/eredo-audit-hook /usr/local/bin/eredo-statusline /usr/local/bin/eredo-relay-hook
 
 USER node
 

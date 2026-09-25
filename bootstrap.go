@@ -35,9 +35,18 @@ func bootstrap(c string, rw bool, extras []string) error {
 	if err := dockerStdin([]byte(trustScript), "exec", "-i", "-e", "EREDO_WS="+cprimary, c, "python3", "-"); err != nil {
 		return err
 	}
-	settings, _ := configBytes("settings.json")
-	if err := dockerStdin(settings, "exec", "-i", c, "sh", "-c", "cat > /home/node/.claude/settings.json"); err != nil {
+	// Policy lives in read-only managed settings (see writeManagedSettings).
+	// The user settings file inside only keeps preferences; a copy of the
+	// policy left there by an older eredo would register every hook twice.
+	resetUser := `f=/home/node/.claude/settings.json; if [ ! -s "$f" ] || grep -q eredo-audit-hook "$f"; then echo '{}' > "$f"; fi`
+	if err := dockerRun("exec", c, "sh", "-c", resetUser); err != nil {
 		return err
+	}
+	if err := writeRelayList(c, effectiveRelayNames(true)); err != nil {
+		return err
+	}
+	if !relayHookRegistered() {
+		info("%s", relayNotRegistered)
 	}
 	skill, _ := assets.ReadFile("skills/eredo/SKILL.md")
 	if err := dockerStdin(skill, "exec", "-i", c, "sh", "-c", "mkdir -p /home/node/.claude/skills/eredo && cat > /home/node/.claude/skills/eredo/SKILL.md"); err != nil {
@@ -59,8 +68,10 @@ func bootstrap(c string, rw bool, extras []string) error {
 		b, _ := os.ReadFile(p)
 		cmd := exec.Command("docker", "exec", "-i", c, "bash", "-c", mcpScript)
 		cmd.Stdin = strings.NewReader(string(b))
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		_ = cmd.Run()
+		out, _ := cmd.CombinedOutput()
+		if s := strings.TrimSpace(string(out)); s != "" {
+			fmt.Println(sanitize(s))
+		}
 	}
 
 	if plugins, ok := configBytes("plugins.txt"); ok {
@@ -68,8 +79,8 @@ func bootstrap(c string, rw bool, extras []string) error {
 		if strings.Contains(text, "@claude-plugins-official") {
 			dockerOK("exec", c, "claude", "plugin", "marketplace", "add", "anthropics/claude-plugins-official")
 		}
-		if strings.Contains(text, "@ouroboros") {
-			dockerOK("exec", c, "claude", "plugin", "marketplace", "add", "Q00/ouroboros")
+		for _, m := range marketplaces(text) {
+			dockerOK("exec", c, "claude", "plugin", "marketplace", "add", m)
 		}
 		for _, line := range strings.Split(text, "\n") {
 			line = strings.TrimSpace(line)
@@ -80,7 +91,7 @@ func bootstrap(c string, rw bool, extras []string) error {
 				fmt.Printf("plugin: %s\n", line)
 			} else {
 				lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-				info("plugin: %s FAILED: %s", line, lines[len(lines)-1])
+				info("plugin: %s FAILED: %s", line, sanitize(lines[len(lines)-1]))
 			}
 		}
 	}
@@ -100,4 +111,25 @@ func bootstrap(c string, rw bool, extras []string) error {
 	}
 	dockerOK("exec", c, "rm", "-f", "/home/node/.claude/CLAUDE.md")
 	return nil
+}
+
+// marketplaces lists the plugin marketplaces to register, from lines like
+// "# marketplace: owner/repo" in plugins.txt. A fresh config dir knows none,
+// not even the official one.
+func marketplaces(plugins string) []string {
+	var out []string
+	if strings.Contains(plugins, "@claude-plugins-official") {
+		out = append(out, "anthropics/claude-plugins-official")
+	}
+	for _, line := range strings.Split(plugins, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "#"); ok {
+			if m, ok := strings.CutPrefix(strings.TrimSpace(rest), "marketplace:"); ok {
+				if m = strings.TrimSpace(m); m != "" {
+					out = append(out, m)
+				}
+			}
+		}
+	}
+	return out
 }

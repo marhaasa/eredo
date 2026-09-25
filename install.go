@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,5 +60,3 @@ func onPath(dir string) bool {
 	}
 	return false
 }
-
-func fmtPath(p string) string { return fmt.Sprint(p) }

@@ -112,10 +112,48 @@ func dockerRun(args ...string) error {
 }
 
 // dockerTTY runs docker with the terminal attached (builds, interactive execs).
-func dockerTTY(args ...string) error {
+func dockerTTY(args ...string) error { return dockerTTYEnv(nil, args...) }
+
+// dockerTTYEnv is dockerTTY with extra NAME=value entries in docker's own
+// environment. Pair it with a bare `-e NAME` so a secret reaches the container
+// without appearing in the host's process list.
+func dockerTTYEnv(extra []string, args ...string) error {
 	cmd := exec.Command("docker", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if len(extra) > 0 {
+		cmd.Env = append(os.Environ(), extra...)
+	}
 	return cmd.Run()
+}
+
+// sanitize makes text that came out of a sandbox safe to print on the host
+// terminal: control characters (escape sequences could rewrite the screen or
+// the clipboard) and bidi overrides are shown escaped. Newlines and tabs stay.
+func sanitize(s string) string {
+	out, _ := printable(s)
+	return out
+}
+
+// printable escapes control and bidi characters and reports whether any
+// were found.
+func printable(s string) (string, bool) {
+	var b strings.Builder
+	found := false
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\t':
+			b.WriteRune(r)
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0):
+			fmt.Fprintf(&b, "\\x%02x", r)
+			found = true
+		case (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) || r == 0x200e || r == 0x200f:
+			fmt.Fprintf(&b, "\\u%04x", r)
+			found = true
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String(), found
 }
 
 // dockerStdin runs docker with the given bytes on stdin.
@@ -162,7 +200,7 @@ const (
 	egressNet    = "eredo-egress"
 	labelKey     = "eredo.sandbox"
 	proxyURL     = "http://proxy:3128"
-	specVersion  = "v7"
+	specVersion  = "v8"
 	sandboxImage = "eredo-sandbox:local"
 	proxyImage   = "eredo-proxy:local"
 )

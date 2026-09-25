@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-const version = "0.2.0"
+const version = "0.3.0-dev"
 
 const usageText = `eredo: a Docker sandbox for Claude Code.
 
@@ -34,6 +34,10 @@ Claude runs can widen it.
   eredo audit   [name]    egress log and tool-call log
   eredo reload            apply allowlist and settings changes to running sandboxes
   eredo clean [--volumes] [name]  remove one or all sandboxes, proxies and networks
+  eredo relay [name] [--copy [n] | --watch | --clear]
+                         commands Claude queued for your host logins (az, gh, ...):
+                         list them, copy one, follow the queue, or empty it
+  eredo update           pull base images and rebuild, which also updates Claude Code
   eredo build [--pull]    (re)build both images from the sources inside this binary
   eredo config [path|init|show]   where overrides live; init copies the shipped files there
   eredo doctor [name]     check the host, and a running sandbox
@@ -77,6 +81,10 @@ func main() {
 		err = cmdReload()
 	case "clean":
 		err = cmdClean(rest)
+	case "relay":
+		err = cmdRelay(rest)
+	case "update":
+		err = cmdUpdate()
 	case "build":
 		err = cmdBuild(len(rest) > 0 && rest[0] == "--pull")
 	case "config":

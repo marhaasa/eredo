@@ -38,12 +38,15 @@ masks, and Claude's token injected per attach. `README.md` is the user guide,
   in an override directory, never here.
 - Any change to what the sandbox can reach or write needs a matching
   `doctor` check.
-- `spec` in `cmd_up` is versioned; bump it when mounts or container env
-  change so existing sandboxes are recreated.
+- `specVersion` in util.go is part of every sandbox's spec label; bump it
+  when mounts or container env change so existing sandboxes are recreated.
+- `sandbox/relay-hook.py` is Python on purpose (the image has python3);
+  `relay_test.go` runs its scanner table on the host.
 
 ## Release
 
-Tag `vX.Y.Z`, push the tag, then update `url`/`tag`/`revision` in
-`Formula/eredo.rb` of marhaasa/homebrew-tools. The formula installs the tree
-into `libexec` and symlinks `bin/eredo`, which the symlink resolver at the top
-of `eredo` follows to find `lib.sh`.
+Bump `version` in main.go, tag `vX.Y.Z` and push the tag: the release
+workflow builds binaries for five targets and attaches them. Then update `tag`
+and `revision` in `Formula/eredo.rb` of marhaasa/homebrew-tools. Images carry
+a hash of the embedded `proxy/` and `sandbox/` sources (`eredo.assets`
+label), so a binary with changed sources rebuilds them on the next `up`.

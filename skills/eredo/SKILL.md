@@ -1,6 +1,6 @@
 ---
 name: eredo
-description: Configure the eredo sandbox for Claude Code - allow domains, add plugins or MCP servers, change permissions, model, effort or permission mode, or explain why something is blocked. Use whenever the user mentions eredo, the sandbox allowlist, sandbox plugins, sandbox settings, or a blocked connection inside the sandbox.
+description: Configure the eredo sandbox for Claude Code - allow domains, add plugins or MCP servers, change permissions, model, effort or permission mode, relay host-only commands (az, aws, gcloud, gh, kubectl), or explain why something is blocked. Use whenever the user mentions eredo, eredo relay, the sandbox allowlist, sandbox plugins, sandbox settings, or a blocked connection or command inside the sandbox.
 ---
 
 # eredo configuration
@@ -13,7 +13,7 @@ edit the eredo repo itself for a personal change.
 | --- | --- | --- |
 | per repo | `<repo>/.eredo/allowlist.txt` | extra domains for that repo, merged |
 | user | `~/.config/eredo/allowlist.txt` | merged |
-| user | `~/.config/eredo/settings.json`, `plugins.txt`, `mcp.json` | replace the shipped file entirely |
+| user | `~/.config/eredo/settings.json`, `plugins.txt`, `relay.txt`, `mcp.json` | replace the shipped file entirely |
 | shipped | the eredo repo | defaults |
 
 ## First: where are you?
@@ -28,7 +28,25 @@ edit the eredo repo itself for a personal change.
   regenerates allowlists and copies settings into running sandboxes.
   `eredo config show` prints which file is in effect for each setting.
 
+A Bash call blocked with `eredo relay: not run` was queued for the host, where
+the user's logins are. Inside, give the user the number and
+`eredo relay <project> --copy <n>`, ask for the output if you need it, and never
+retry it another way. You cannot change the relay list from inside; give the
+user the host edit.
+
 ## Recipes
+
+**Host-only commands (relay).** The sandbox has no cloud logins. Commands whose
+program is on the relay list (shipped: az aws gcloud gh kubectl) are blocked
+inside before they run and queued for the host. On the host: `eredo relay
+[project]` lists the queue, `--copy [n]` copies one (default the latest),
+`--watch` copies each new one as it arrives, `--clear` empties it. The user
+reads each command and runs it themselves; nothing runs automatically. To relay
+another command: `eredo config init` (creates `~/.config/eredo/relay.txt`), add
+one name per line, `eredo reload`; it applies at once. Remove a name to let it
+run inside; an empty file turns the relay off. A `settings.json` override must
+keep the PreToolUse group whose command runs `eredo-relay-hook`.
+
 
 **Allow a domain.** Append it to the allowlist. `example.com` matches exactly,
 `.example.com` matches the domain and every subdomain. Only HTTPS on port 443
@@ -47,7 +65,7 @@ example context7 needs `mcp.context7.com`.
 deny entries unless the user explicitly asks to drop one, and say what each
 protects: `git push` and `git remote` (no credentials should leave through
 git), `WebSearch` (runs on Anthropic's servers, bypasses the proxy),
-`.env`/`.pem`/`.key` reads, and `Edit`/`Write` under `.git` (hooks or config
+`.env`/`.pem`/`.key` reads, and `Edit` under `.git` (hooks or config
 written there would run on the host). Apply with `eredo reload`; hook and
 status line changes need a new session inside.
 

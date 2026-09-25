@@ -36,6 +36,11 @@ func cmdDoctor(args []string) int {
 			warn("image %s not built (eredo build)", img)
 		}
 	}
+	if imagesCurrent() {
+		ok("images built by this eredo version")
+	} else {
+		warn("images missing or from another eredo version (eredo build, or eredo up rebuilds)")
+	}
 	if _, err := exec.LookPath("git"); err == nil {
 		ok("git")
 	} else {
@@ -135,15 +140,44 @@ func cmdDoctor(args []string) int {
 			ok(".git/config read-only")
 		}
 	}
-	if X("test -s /home/node/.claude/settings.json") {
-		ok("settings.json installed")
+	if X("test -s /etc/claude-code/managed-settings.json") {
+		if X("touch /etc/claude-code/managed-settings.json") {
+			bad("policy settings writable from inside")
+		} else {
+			ok("policy settings installed read-only")
+		}
 	} else {
-		bad("settings.json missing")
+		bad("policy settings missing (/etc/claude-code/managed-settings.json)")
 	}
 	if X("test -x /usr/local/bin/eredo-audit-hook && test -x /usr/local/bin/eredo-statusline") {
 		ok("audit hook and status line installed")
 	} else {
 		bad("audit hook or status line missing")
+	}
+	relayProbe := `test -x /usr/local/bin/eredo-relay-hook || exit 3
+test -s /home/node/.claude/relay/commands || exit 4
+d=$(mktemp -d); cp /home/node/.claude/relay/commands "$d/"; c=$(grep -v '^#' "$d/commands" | head -n1)
+printf '{"tool_name":"Bash","tool_input":{"command":"cd /tmp && X=1 %s --version"},"cwd":"/tmp","session_id":"doctor","tool_use_id":"doctor"}' "$c" \
+  | EREDO_RELAY_DIR="$d" /usr/local/bin/eredo-relay-hook | jq -e '.hookSpecificOutput.permissionDecision=="deny"' >/dev/null && test -s "$d/queue.jsonl"
+r=$?; rm -rf "$d"; exit $r`
+	_, perr := execIn(sbx, relayProbe)
+	code := 0
+	if ee, isExit := perr.(*exec.ExitError); isExit {
+		code = ee.ExitCode()
+	} else if perr != nil {
+		code = 1
+	}
+	switch {
+	case code == 3:
+		bad("relay hook missing from the image (eredo up --rebuild <dir>)")
+	case code == 4:
+		warn("relay list empty: relay off")
+	case code != 0:
+		bad("relay hook did not deny a probe")
+	case !X("grep -q eredo-relay-hook /etc/claude-code/managed-settings.json"):
+		warn("relay hook not registered in settings.json: relay off")
+	default:
+		ok("relay hook denies and queues (relaying: %s)", strings.Join(strings.Fields(out("cat /home/node/.claude/relay/commands")), " "))
 	}
 	if v := out("claude --version"); v != "" && X("claude --version") {
 		ok("claude %s", strings.Fields(v)[0])

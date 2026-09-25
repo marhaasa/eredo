@@ -37,11 +37,10 @@
       "Read(./**/*.pem)",
       "Read(./**/*.key)",
       "Edit(./.git/**)",
-      "Write(./.git/**)",
-      "Edit(./.claude/**)",
-      "Write(./.claude/**)",
       "Edit(./.mcp.json)",
-      "Write(./.mcp.json)"
+      "Edit(./.claude/settings.json)",
+      "Edit(./.claude/settings.local.json)",
+      "Edit(./.claude/hooks/**)"
     ]
   },
   "hooks": {
@@ -74,6 +73,16 @@
             "type": "command",
             "command": "/usr/local/bin/eredo-audit-hook",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /usr/local/bin/eredo-relay-hook ] || exit 0; exec /usr/local/bin/eredo-relay-hook",
+            "timeout": 10
           }
         ]
       }

@@ -1,0 +1,11 @@
+# Commands the eredo relay intercepts inside the sandbox. They need your
+# logins, which exist only on the host: when Claude runs one, it is queued
+# for you instead (`eredo relay` lists, copies and follows the queue).
+# One name per line. Override with ~/.config/eredo/relay.txt (replaces this
+# list; an empty file turns the relay off), then `eredo reload`.
+# Common additions: azd, terraform, helm, gsutil, bq.
+az
+aws
+gcloud
+gh
+kubectl

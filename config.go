@@ -59,7 +59,7 @@ func domainLines(b []byte) (good, bad []string) {
 // survive; the repo's contribution is announced every time so a cloned repo
 // cannot widen egress unnoticed.
 func allowlistDir(name, primary string) (string, error) {
-	dir := filepath.Join(stateDir, name)
+	dir := filepath.Join(stateDir, name, "proxy")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -112,7 +112,7 @@ func cmdConfig(args []string) error {
 		if err := os.MkdirAll(configDir, 0o755); err != nil {
 			return err
 		}
-		for _, f := range []string{"settings.json", "plugins.txt"} {
+		for _, f := range []string{"settings.json", "plugins.txt", "relay.txt"} {
 			p := filepath.Join(configDir, f)
 			if isFile(p) {
 				continue
@@ -134,7 +134,7 @@ func cmdConfig(args []string) error {
 		info("edit the files, then: eredo reload")
 	case "show":
 		fmt.Printf("config dir:   %s\nstate dir:    %s\n", configDir, stateDir)
-		for _, f := range []string{"settings.json", "plugins.txt", "mcp.json"} {
+		for _, f := range []string{"settings.json", "plugins.txt", "relay.txt", "mcp.json"} {
 			switch {
 			case overridePath(f) != "":
 				fmt.Printf("%-13s %s\n", f, overridePath(f))
@@ -143,6 +143,10 @@ func cmdConfig(args []string) error {
 			default:
 				fmt.Printf("%-13s (none)\n", f)
 			}
+		}
+		fmt.Printf("              relays: %s\n", strings.Join(effectiveRelayNames(false), " "))
+		if !relayHookRegistered() {
+			fmt.Println("              " + relayNotRegistered)
 		}
 		fmt.Println("allowlist:    (shipped)")
 		if isFile(filepath.Join(configDir, "allowlist.txt")) {
@@ -153,4 +157,28 @@ func cmdConfig(args []string) error {
 		return fmt.Errorf("usage: eredo config [path|init|show]")
 	}
 	return nil
+}
+
+// writeManagedSettings writes the effective settings.json (override or
+// shipped) to the project's state dir as Claude Code managed settings and
+// returns the directory, which is mounted read-only at /etc/claude-code.
+func writeManagedSettings(name string) (string, error) {
+	settings, _ := configBytes("settings.json")
+	return writeManagedSettingsBytes(name, settings)
+}
+
+// writeManagedSettingsBytes rewrites the file in place: a file bind mount
+// follows the inode, so a running sandbox sees the new content.
+func writeManagedSettingsBytes(name string, settings []byte) (string, error) {
+	dir := filepath.Join(stateDir, name, "claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "managed-settings.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	_, err = f.Write(settings)
+	return dir, err
 }
