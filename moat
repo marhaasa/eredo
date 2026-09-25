@@ -484,7 +484,7 @@ cmd_selftest() {
   local rc=0
   MOAT_CONFIG="$cfg" MOAT_STATE="$tmp/state" "$0" up --no-attach "$repo" || rc=$?
   if [ $rc -eq 0 ]; then "$0" doctor selftest || rc=$?; fi
-  cmd_clean --volumes selftest >/dev/null
+  cmd_clean --volumes selftest >/dev/null 2>&1
   rm -rf "$tmp"
   return $rc
 }
