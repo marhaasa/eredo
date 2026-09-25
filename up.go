@@ -1,0 +1,207 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+func cmdUp(args []string) error {
+	claudeFlags, rest, err := parseClaudeOpts(args)
+	if err != nil {
+		return err
+	}
+	rw, rebuild, attach := false, false, true
+	var paths []string
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
+		switch a {
+		case "--rw":
+			rw = true
+		case "--rebuild":
+			rebuild = true
+		case "--no-attach":
+			attach = false
+		case "--":
+			paths = append(paths, rest[i+1:]...)
+			i = len(rest)
+		default:
+			if strings.HasPrefix(a, "-") {
+				return fmt.Errorf("unknown option: %s", a)
+			}
+			paths = append(paths, a)
+		}
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("usage: moat up [--rw] [--rebuild] [--no-attach] <primary> [extra-repo ...]")
+	}
+	primary, err := absDir(paths[0])
+	if err != nil {
+		return err
+	}
+	var extras []string
+	for _, e := range paths[1:] {
+		p, err := absDir(e)
+		if err != nil {
+			return err
+		}
+		extras = append(extras, p)
+	}
+
+	name := env("MOAT_NAME", filepath.Base(primary))
+	sbx, prx, nw := sb(name), px(name), net(name)
+	rwInt := 0
+	if rw {
+		rwInt = 1
+	}
+	spec := fmt.Sprintf("%s %s rw=%d %s", specVersion, primary, rwInt, strings.Join(extras, " "))
+
+	if err := ensureDocker(); err != nil {
+		return err
+	}
+	if rebuild {
+		if err := cmdBuild(false); err != nil {
+			return err
+		}
+	}
+	if err := ensureImages(); err != nil {
+		return err
+	}
+
+	// Two repos with the same directory name would otherwise fight over one sandbox.
+	if exists(sbx) {
+		if other := label(sbx, "moat.workspace"); other != primary {
+			return fmt.Errorf("sandbox name '%s' is in use by %s; set MOAT_NAME=<name> or run: moat clean %s", name, other, name)
+		}
+	}
+	// Reuse an existing sandbox when its mounts are unchanged.
+	if exists(sbx) && !rebuild && label(sbx, "moat.spec") == spec {
+		if !running(sbx) {
+			info("Starting %s", sbx)
+			if err := dockerRun("start", prx, sbx); err != nil {
+				return err
+			}
+		}
+		if attach {
+			return attachTo(name, claudeFlags)
+		}
+		return nil
+	}
+	if exists(sbx) {
+		info("Recreating %s (mounts or image changed)", sbx)
+		removeProject(name)
+	}
+
+	if !dockerOK("network", "inspect", egressNet) {
+		if err := dockerRun("network", "create", egressNet); err != nil {
+			return err
+		}
+	}
+	if !dockerOK("network", "inspect", nw) {
+		if err := dockerRun("network", "create", "--internal", "--label", labelKey+"=1", nw); err != nil {
+			return err
+		}
+	}
+
+	adir, err := allowlistDir(name, primary)
+	if err != nil {
+		return err
+	}
+	sandboxImg, proxyImg := imageNames()
+	info("Starting proxy %s (allowlist: %s)", prx, filepath.Join(adir, "allowlist.txt"))
+	if err := dockerRun("create", "--name", prx,
+		"--label", labelKey+"=1", "--label", "moat.role=proxy", "--label", "moat.project="+name,
+		"--network", nw, "--network-alias", "proxy",
+		"--add-host", "host.docker.internal:host-gateway",
+		"--mount", "type=bind,source="+adir+",target=/etc/moat,readonly",
+		"-e", "FORWARD="+os.Getenv("MOAT_FORWARD"),
+		proxyImg); err != nil {
+		return err
+	}
+	if err := dockerRun("network", "connect", egressNet, prx); err != nil {
+		return err
+	}
+	if err := dockerRun("start", prx); err != nil {
+		return err
+	}
+
+	// Same paths inside as on the host (mapped on Windows), so Claude's cwd,
+	// errors and file references read the same on both sides.
+	cprimary := containerPath(primary)
+	mounts := []string{"--mount", "type=bind,source=" + primary + ",target=" + cprimary}
+	mounts = append(mounts, gitMasks(primary, cprimary)...)
+	for _, e := range extras {
+		ro := ",readonly"
+		if rw {
+			ro = ""
+		}
+		mounts = append(mounts, "--mount", "type=bind,source="+e+",target="+containerPath(e)+ro)
+		if rw {
+			mounts = append(mounts, gitMasks(e, containerPath(e))...)
+		}
+	}
+
+	info("Starting sandbox %s", sbx)
+	runArgs := []string{"run", "-d", "--name", sbx,
+		"--label", labelKey + "=1", "--label", "moat.role=sandbox", "--label", "moat.project=" + name,
+		"--label", "moat.workspace=" + primary, "--label", "moat.spec=" + spec,
+		"--network", nw,
+		"--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--init", "--pids-limit", "4096",
+		"--user", "node", "--workdir", cprimary}
+	runArgs = append(runArgs, mounts...)
+	runArgs = append(runArgs,
+		"--mount", "type=volume,source=moat-"+name+"-config,target=/home/node/.claude",
+		"--mount", "type=volume,source=moat-"+name+"-history,target=/commandhistory",
+		"-e", "HTTP_PROXY="+proxyURL, "-e", "HTTPS_PROXY="+proxyURL,
+		"-e", "http_proxy="+proxyURL, "-e", "https_proxy="+proxyURL,
+		"-e", "NO_PROXY=proxy,localhost,127.0.0.1", "-e", "no_proxy=proxy,localhost,127.0.0.1",
+		"-e", "CLAUDE_CONFIG_DIR=/home/node/.claude",
+		"-e", "CLAUDE_PROJECT_NAME="+name,
+		"-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+		"-e", "DISABLE_TELEMETRY=1", "-e", "DISABLE_ERROR_REPORTING=1", "-e", "DISABLE_AUTOUPDATER=1",
+		"-e", "NODE_OPTIONS=--max-old-space-size=4096",
+		sandboxImg, "sleep", "infinity")
+	if err := dockerRun(runArgs...); err != nil {
+		return err
+	}
+
+	// Wait until the proxy answers before bootstrapping (plugin installs need it).
+	for i := 0; i < 10; i++ {
+		if dockerOK("exec", sbx, "curl", "-s", "-o", "/dev/null", "--max-time", "3", "https://api.anthropic.com/") {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if err := bootstrap(sbx, rw, extras); err != nil {
+		return err
+	}
+	if attach {
+		return attachTo(name, claudeFlags)
+	}
+	return nil
+}
+
+// gitMasks masks the two places under .git where a write would execute code
+// on the host the next time the user runs git there: hooks (empty read-only
+// tmpfs) and config (read-only bind). Everything else stays writable.
+func gitMasks(src, dst string) []string {
+	git := filepath.Join(src, ".git")
+	if !isDir(git) {
+		if _, err := os.Lstat(git); err == nil {
+			info("note: %s is not a directory (worktree or submodule): hooks and config are not masked", git)
+		}
+		return nil
+	}
+	m := []string{"--tmpfs", dst + "/.git/hooks:ro,size=64k"}
+	if cfg := filepath.Join(git, "config"); isFile(cfg) {
+		m = append(m, "--mount", "type=bind,source="+cfg+",target="+dst+"/.git/config,readonly")
+	}
+	return m
+}
+
+func removeProject(name string) {
+	dockerOK("rm", "-f", sb(name), px(name))
+	dockerOK("network", "rm", net(name))
+}

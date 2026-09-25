@@ -18,10 +18,10 @@ to the internet at all; without the proxy every connection fails.
 
 ## Requirements
 
-Docker Desktop (macOS, Windows via WSL2) or Docker Engine (Linux), bash, git,
-and jq or python3. Claude Code logged in on the host: the token is read from
-the macOS keychain or `~/.claude/.credentials.json`, or you export
-`CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
+Docker Desktop (macOS, Windows) or Docker Engine (Linux), and git. Claude
+Code logged in on the host: the token is read from the macOS keychain or
+`~/.claude/.credentials.json`, or you export `CLAUDE_CODE_OAUTH_TOKEN` from
+`claude setup-token`.
 
 ## Install
 
@@ -29,16 +29,19 @@ the macOS keychain or `~/.claude/.credentials.json`, or you export
 brew install marhaasa/tools/moat        # macOS or Linux with Homebrew
 ```
 
-or, without Homebrew:
+or download the binary for your platform from the releases page, or build
+it yourself with Go:
 
 ```bash
-git clone https://github.com/marhaasa/moat.git && ./moat/moat install
+git clone https://github.com/marhaasa/moat.git && cd moat && go build -o moat . && ./moat install
 ```
 
-`moat install` links the command into `~/.local/bin` if it is not already on
-your PATH, and links the moat skill into `~/.claude/skills` so Claude Code on
-the host can configure moat for you. Run it after a Homebrew install too, for
-the skill.
+moat is a single binary with the image sources, default settings and the
+Claude skill inside it. `moat install` links it into `~/.local/bin` if it is
+not already on your PATH and writes the moat skill to `~/.claude/skills`, so
+Claude Code on the host can configure moat for you. Run it after a Homebrew
+install too, for the skill. On Windows, put `moat.exe` on your PATH and run
+`moat install` for the skill.
 
 ## Usage
 

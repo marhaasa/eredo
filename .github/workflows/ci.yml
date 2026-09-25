@@ -1,22 +1,42 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [main, go]
   pull_request:
 
 jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...
+      - name: cross-compile
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o /dev/null .
+          GOOS=windows GOARCH=amd64 go build -o /dev/null .
+          GOOS=linux GOARCH=arm64 go build -o /dev/null .
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-      - run: shellcheck -x moat moat-docker lib.sh sandbox/audit-hook.sh sandbox/statusline.sh proxy/entrypoint.sh
+      - run: shellcheck -x moat-docker lib.sh sandbox/audit-hook.sh sandbox/statusline.sh proxy/entrypoint.sh
 
   selftest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: build images
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build -o moat .
+      - name: build images from the embedded sources
         run: ./moat build
       - name: start a scratch sandbox and run every doctor check against it
         run: ./moat selftest
