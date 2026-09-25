@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-# Optional TCP forward so the sandbox can reach exactly one host port, used for
-# the host-side reminders MCP server. Format: LISTEN_PORT:TARGET_HOST:TARGET_PORT
+# Optional TCP forward so the sandbox can reach exactly one host port (a local
+# MCP server or database). Format: LISTEN_PORT:TARGET_HOST:TARGET_PORT
 if [ -n "${FORWARD:-}" ]; then
   listen="${FORWARD%%:*}"
   target="${FORWARD#*:}"
@@ -11,7 +11,7 @@ if [ -n "${FORWARD:-}" ]; then
 fi
 
 echo "allowlist:"
-grep -vE '^[[:space:]]*(#|$)' /etc/claude-proxy/allowlist.txt | sed 's/^/  /'
+grep -vE '^[[:space:]]*(#|$)' /etc/moat/allowlist.txt | sed 's/^/  /'
 
 # Stream the access log to the container's stdout for `docker logs` / audit.
 mkdir -p /var/log/squid && touch /var/log/squid/access.log && chown -R squid:squid /var/log/squid

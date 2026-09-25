@@ -74,7 +74,9 @@ recognisable, on every platform and terminal.
 - `settings.json`: read-only commands and read-only git allowed; `git push`,
   `git remote`, `WebSearch` (it runs on Anthropic's servers and would bypass
   the proxy), reads of `.env*`, `.pem` and `.key` files, and edits under
-  `.git` denied; a hook records every tool call to `~/.claude/audit.log`.
+  `.git`, `.claude/` and `.mcp.json` (files that configure Claude on the host
+  the next time you open the repo there) denied; a hook records every tool
+  call to `~/.claude/audit.log`.
 - Plugins from `plugins.txt` and MCP servers from an optional `mcp.json`,
   installed on first start.
 
@@ -140,7 +142,16 @@ differences.
   Anthropic API to produce responses. Keep secrets out of the mount.
 - Allowed domains are exfiltration channels. GitHub is allowed for cloning
   and plugins; the sandbox has no GitHub credentials, keep it that way.
-- The proxy sees only hostnames, never URLs or content.
+- The proxy sees only hostnames, never URLs or content. It refuses private,
+  loopback and link-local destinations even for allowlisted names, so
+  `MOAT_FORWARD` is the only way to reach a host service.
+- The tool-call log lives inside the sandbox and Claude can edit it. The proxy
+  log is outside and is the authoritative record of what left.
+- A repo's own `.moat/allowlist.txt` is applied only by you running `up` or
+  `reload`, and moat prints what it adds each time. Read it before starting a
+  sandbox on a repo you did not write.
+- Sandboxes are named after the repo directory. Two repos with the same name
+  need `MOAT_NAME` to tell them apart; moat refuses to reuse the name.
 - The container shares the Docker VM's kernel with your other containers.
   Docker Desktop shares `/Users` with that VM by default; narrow it under
   Settings > Resources > File sharing.

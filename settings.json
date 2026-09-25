@@ -37,7 +37,11 @@
       "Read(./**/*.pem)",
       "Read(./**/*.key)",
       "Edit(./.git/**)",
-      "Write(./.git/**)"
+      "Write(./.git/**)",
+      "Edit(./.claude/**)",
+      "Write(./.claude/**)",
+      "Edit(./.mcp.json)",
+      "Write(./.mcp.json)"
     ]
   },
   "hooks": {

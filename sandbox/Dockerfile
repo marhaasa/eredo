@@ -6,7 +6,7 @@
 # can loosen that.
 FROM node:22-bookworm
 
-ARG TZ=Europe/Oslo
+ARG TZ=UTC
 ENV TZ="$TZ"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,8 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /usr/local/share/npm-global && chown -R node:node /usr/local/share
 
-# Persisted shell history (named volume mounted here by moat)
-RUN mkdir -p /commandhistory && touch /commandhistory/.bash_history && chown -R node:node /commandhistory
+# Persisted zsh history (named volume mounted here by moat)
+RUN mkdir -p /commandhistory && touch /commandhistory/.zsh_history && chown -R node:node /commandhistory
 
 RUN mkdir -p /home/node/.claude /home/node/.local/bin /home/node/.local/share && \
   chown -R node:node /home/node/.claude /home/node/.local
@@ -58,7 +58,7 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
   -p fzf \
   -a "source /usr/share/doc/fzf/examples/key-bindings.zsh" \
   -a "source /usr/share/doc/fzf/examples/completion.zsh" \
-  -a "export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
+  -a "export HISTFILE=/commandhistory/.zsh_history" \
   -x
 
 # Claude Code via the native installer. Auto-update is disabled at runtime;
