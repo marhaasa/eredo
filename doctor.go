@@ -81,7 +81,7 @@ func cmdDoctor(args []string) int {
 		bad("running as root")
 	}
 	if f := strings.Fields(out("grep CapEff /proc/self/status")); len(f) == 2 && f[1] == "0000000000000000" {
-		ok("no capabilities")
+		ok("no privileges (all capabilities dropped)")
 	} else {
 		bad("capabilities present")
 	}

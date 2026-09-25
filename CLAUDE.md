@@ -1,6 +1,6 @@
 # eredo
 
-Docker sandbox for Claude Code: a container with no capabilities on an
+Docker sandbox for Claude Code: a container with no root and no privileges on an
 internal network, a squid sidecar that owns the domain allowlist, `.git`
 masks, and Claude's token injected per attach. `README.md` is the user guide,
 `ARCHITECTURE.md` the design and its comparison with Docker's own sandbox.

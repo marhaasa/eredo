@@ -21,7 +21,7 @@ The enforcement point, the proxy, lives outside the container Claude runs in,
 so nothing Claude executes can widen the allowlist. The sandbox has no route
 to the internet at all; without the proxy every connection fails.
 
-## The name
+## Sungbo's Eredo
 
 Sungbo's Eredo is a system of defensive walls and ditches around Ijebu Ode
 in Nigeria, one of the largest earthworks ever built. This tool started life
