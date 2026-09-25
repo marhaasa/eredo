@@ -2,7 +2,7 @@
 #
 # Deliberately has no sudo, no iptables and no network tooling: egress is
 # enforced outside this container by the proxy sidecar (../proxy) and the
-# internal Docker network that sandbox.sh creates. Nothing running in here
+# internal Docker network that moat creates. Nothing running in here
 # can loosen that.
 FROM node:22-bookworm
 
@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /usr/local/share/npm-global && chown -R node:node /usr/local/share
 
-# Persisted shell history (named volume mounted here by sandbox.sh)
+# Persisted shell history (named volume mounted here by moat)
 RUN mkdir -p /commandhistory && touch /commandhistory/.bash_history && chown -R node:node /commandhistory
 
 RUN mkdir -p /workspace /home/node/.claude /home/node/.local/bin /home/node/.local/share && \
@@ -40,9 +40,9 @@ RUN mkdir -p /workspace /home/node/.claude /home/node/.local/bin /home/node/.loc
 
 # PreToolUse hook that appends every tool call to ~/.claude/audit.log, and the
 # status line that marks the session as sandboxed.
-COPY audit-hook.sh /usr/local/bin/claude-audit-hook
-COPY statusline.sh /usr/local/bin/claude-sandbox-statusline
-RUN chmod 0755 /usr/local/bin/claude-audit-hook /usr/local/bin/claude-sandbox-statusline
+COPY audit-hook.sh /usr/local/bin/moat-audit-hook
+COPY statusline.sh /usr/local/bin/moat-statusline
+RUN chmod 0755 /usr/local/bin/moat-audit-hook /usr/local/bin/moat-statusline
 
 WORKDIR /workspace
 USER node
@@ -63,6 +63,6 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
   -x
 
 # Claude Code via the native installer. Auto-update is disabled at runtime;
-# rebuild the image (sandbox.sh build) to update.
+# rebuild the image (moat build) to update.
 ARG CLAUDE_CODE_VERSION=latest
 RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_CODE_VERSION}"

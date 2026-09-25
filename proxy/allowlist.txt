@@ -1,9 +1,10 @@
 # Domains the sandbox may reach. HTTPS only, always through the proxy sidecar.
 # Squid dstdomain syntax: a leading dot matches the domain and every subdomain.
-# After editing, run `sandbox.sh reload` (or claude-clean and start again).
+# Add your own in ~/.config/moat/allowlist.txt (merged) or per repo in
+# <repo>/.moat/allowlist.txt, then run `moat reload`.
 
-# Claude Code API (the only destination Claude Code itself needs with
-# telemetry, error reporting and auto-update disabled)
+# Claude Code API: the only destination Claude Code itself needs with
+# telemetry, error reporting and auto-update disabled
 api.anthropic.com
 
 # git over HTTPS, gh, plugin marketplaces, release downloads
@@ -13,9 +14,7 @@ api.anthropic.com
 # npm registry (npx-based MCP servers and plugin dependencies)
 registry.npmjs.org
 
-# Python packaging. Uncomment if a project needs uv/pip inside the sandbox.
+# Common additions, uncomment as needed:
 # pypi.org
 # files.pythonhosted.org
-
-# Remote MCP servers used by plugins.
-mcp.context7.com
+# mcp.context7.com

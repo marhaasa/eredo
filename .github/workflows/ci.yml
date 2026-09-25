@@ -1,0 +1,22 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      - run: shellcheck -x moat moat-docker lib.sh sandbox/audit-hook.sh sandbox/statusline.sh proxy/entrypoint.sh
+
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build images
+        run: ./moat build
+      - name: start a scratch sandbox and run every doctor check against it
+        run: ./moat selftest

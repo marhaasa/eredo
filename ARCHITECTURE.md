@@ -4,9 +4,9 @@ Both scripts in this directory run Claude Code against a repo you keep
 working on from the host with nvim, lazygit and your own credentials. They
 answer different questions:
 
-- `sandbox.sh` answers *what is the agent allowed to do?* It is policy inside
+- `moat` answers *what is the agent allowed to do?* It is policy inside
   a container you control completely.
-- `docker-sandbox.sh` answers *what if the agent fully compromises its
+- `moat-docker` answers *what if the agent fully compromises its
   environment?* It is a microVM boundary with the credential kept outside.
 
 Everything below was verified on 2026-09-24 with Docker Desktop 29.x and the
@@ -14,7 +14,7 @@ Everything below was verified on 2026-09-24 with Docker Desktop 29.x and the
 
 ## 1. Topology
 
-### sandbox.sh: container plus proxy sidecar
+### moat: container plus proxy sidecar
 
 ```mermaid
 flowchart TB
@@ -23,16 +23,16 @@ flowchart TB
     you["you: nvim, lazygit,<br/>git push, 1Password"]
     repo[("~/Repos/.../Doll")]
     kc["Keychain:<br/>Claude OAuth token"]
-    script["sandbox.sh"]
+    script["moat"]
     you --> repo
   end
   subgraph vm["Docker Desktop Linux VM"]
     direction LR
-    subgraph inet["claude-Doll-net: internal, no gateway"]
-      sbx["claude-Doll<br/>node user, cap-drop ALL, no sudo<br/>HTTPS_PROXY=proxy:3128"]
-      px["claude-Doll-proxy<br/>squid: CONNECT :443<br/>to allowlist only"]
+    subgraph inet["moat-Doll-net: internal, no gateway"]
+      sbx["moat-Doll<br/>node user, cap-drop ALL, no sudo<br/>HTTPS_PROXY=proxy:3128"]
+      px["moat-Doll-proxy<br/>squid: CONNECT :443<br/>to allowlist only"]
     end
-    egress["claude-egress network"]
+    egress["moat-egress network"]
     sbx -- "CONNECT api.anthropic.com" --> px --> egress
   end
   net["internet: allowlisted domains"]
@@ -47,7 +47,7 @@ The sandbox has no route to the internet at all. The only thing it can reach
 is the proxy, and the proxy owns the allowlist. Nothing running inside can
 widen it, because there is no sudo, no capability and no iptables to touch.
 
-### docker-sandbox.sh: microVM plus Docker's host proxy
+### moat-docker: microVM plus Docker's host proxy
 
 ```mermaid
 flowchart TB
@@ -57,11 +57,11 @@ flowchart TB
     repo[("~/Repos/.../Doll")]
     cred["Claude session token<br/>stored by Docker after /login"]
     dproxy["Docker host proxy<br/>default deny + allowlist<br/>TLS interception,<br/>credential injection"]
-    script["docker-sandbox.sh"]
+    script["moat-docker"]
     you --> repo
     cred --> dproxy
   end
-  subgraph mvm["microVM claude-Doll: own kernel"]
+  subgraph mvm["microVM moat-Doll: own kernel"]
     agent["claude<br/>agent user, sudo removed by the script<br/>HTTPS_PROXY=host.docker.internal:3128"]
   end
   net["internet: allowlisted domains"]
@@ -74,19 +74,19 @@ flowchart TB
 
 Docker ships this with an allow-all policy, passwordless root, a Docker
 daemon inside and Claude in bypassPermissions mode. The script replaces all of
-that with the same allowlist, settings and privileges sandbox.sh has, so the
+that with the same allowlist, settings and privileges moat has, so the
 remaining differences are the ones Docker's design forces.
 
 ## 2. Where a compromise ends up
 
 ```mermaid
 flowchart TB
-  subgraph A["sandbox.sh"]
+  subgraph A["moat"]
     direction TB
     a1["Claude process"] -->|"container escape"| a2["Docker Desktop VM<br/>every other container<br/>every path in Docker file sharing"]
     a2 -->|"VM escape"| a3["macOS host"]
   end
-  subgraph B["docker-sandbox.sh"]
+  subgraph B["moat-docker"]
     direction TB
     b1["Claude process"] -->|"container escape"| b2["microVM<br/>this project only"]
     b2 -->|"hypervisor escape"| b3["macOS host"]
@@ -94,7 +94,7 @@ flowchart TB
 ```
 
 Both need two escapes to reach macOS. The difference is what the first one
-lands in. In sandbox.sh that is a kernel shared with everything else you run
+lands in. In moat that is a kernel shared with everything else you run
 in Docker, plus whatever file sharing exposes, which is all of /Users unless
 you narrow it. In the microVM it is a kernel that holds nothing but this
 project.
@@ -103,7 +103,7 @@ project.
 
 ```mermaid
 sequenceDiagram
-  participant C as claude in sandbox.sh
+  participant C as claude in moat
   participant S as squid sidecar
   participant I as internet
   C->>S: CONNECT api.anthropic.com:443
@@ -116,7 +116,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant C as claude in docker-sandbox.sh
+  participant C as claude in moat-docker
   participant P as Docker host proxy
   participant I as internet
   C->>P: HTTPS api.anthropic.com, proxy CA trusted inside
@@ -144,18 +144,18 @@ sequenceDiagram
   H->>G: git log shows it immediately
   H->>H: git push with your own credentials
   Note over Cl,G: hazard: a hook or a config key written here runs on the host at your next git command
-  Note over G: sandbox.sh: hooks are an empty read-only tmpfs, config a read-only bind
-  Note over G: docker-sandbox.sh: writable, the sandbox refuses mounts over the workspace
+  Note over G: moat: hooks are an empty read-only tmpfs, config a read-only bind
+  Note over G: moat-docker: writable, the sandbox refuses mounts over the workspace
 ```
 
-This is the one place where sandbox.sh is stronger for the way you work. In
+This is the one place where moat is stronger for the way you work. In
 the Docker sandbox the only thing between Claude and a planted hook is the
 permission prompt, plus the Edit and Write deny rules under `.git` in
 settings.json.
 
 ## 5. Side by side
 
-| | sandbox.sh | docker-sandbox.sh |
+| | moat | moat-docker |
 | --- | --- | --- |
 | Boundary | container, cap-drop ALL, shared VM kernel | microVM with its own kernel |
 | First escape lands in | Docker Desktop VM | this project's VM |
@@ -190,10 +190,10 @@ removed it. Both new setups move enforcement outside the agent's reach.
 ## 7. Which one when
 
 - **Daily interactive work on private repos**, committing inside and pushing
-  from the host: sandbox.sh. The `.git` masks, the tight allowlist you own and
+  from the host: moat. The `.git` masks, the tight allowlist you own and
   the request-level log matter more than the VM boundary while you are
   watching.
 - **Unattended runs, untrusted code, tasks that need Docker or root inside,
-  or a credential the agent must use but must never hold**: docker-sandbox.sh.
+  or a credential the agent must use but must never hold**: moat-docker.
   The VM boundary and proxy-side credentials are exactly what you want when
   nobody is watching or the code is not yours.

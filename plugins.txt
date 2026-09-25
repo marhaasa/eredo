@@ -1,6 +1,4 @@
-context7@claude-plugins-official
-superpowers@claude-plugins-official
-explanatory-output-style@claude-plugins-official
-ralph-loop@claude-plugins-official
-gopls-lsp@claude-plugins-official
-pyright-lsp@claude-plugins-official
+# Claude Code plugins to install on first start, one per line, e.g.
+#   context7@claude-plugins-official
+# Override with ~/.config/moat/plugins.txt. Plugins that talk to
+# remote MCP servers need their domains in the allowlist.

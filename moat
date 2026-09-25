@@ -1,53 +1,62 @@
 #!/usr/bin/env bash
-# Claude Code sandbox.
+# moat: a Docker sandbox for Claude Code.
 #
-# Per project, sandbox.sh creates an *internal* Docker network (no route to the
+# Per project, moat creates an *internal* Docker network (no route to the
 # outside), a proxy sidecar that is the only thing on that network with egress,
 # and a sandbox container that runs Claude Code as an unprivileged user with
 # every capability dropped. The sidecar owns the domain allowlist, so nothing
 # Claude runs can widen it.
 #
-#   sandbox.sh up [--rw] [--rebuild] [--no-attach] [claude opts] <primary> [extra-repo ...]
+#   moat up [--rw] [--rebuild] [--no-attach] [claude opts] <primary> [extra-repo ...]
 #                     start (or reuse) the sandbox for <primary> and attach.
 #                     Extra repos are mounted read-only under /home/node/<name>
 #                     unless --rw is given. --no-attach just starts it.
-#   sandbox.sh attach [name] [claude opts]
+#   moat attach [name] [claude opts]
 #                     attach Claude Code to a running sandbox. Claude opts:
 #                     --model M, --effort E, --mode P (default, acceptEdits,
 #                     plan, auto, dontAsk, bypassPermissions); persistent
 #                     defaults are model, effortLevel and permissions.defaultMode
 #                     in settings.json
-#   sandbox.sh shell  [name]     open a zsh in a running sandbox
-#   sandbox.sh restart [name]    restart a sandbox (re-resolves .git/config mask)
-#   sandbox.sh ps                list sandboxes
-#   sandbox.sh audit  [name]     show egress log and tool-call log
-#   sandbox.sh reload            make running proxies re-read the allowlist
-#   sandbox.sh clean [--volumes] remove all sandboxes, proxies and networks
-#   sandbox.sh build [--pull]    (re)build both images
-#   sandbox.sh bootstrap <container> [--rw] [extra-repo ...]
+#   moat shell  [name]     open a zsh in a running sandbox
+#   moat restart [name]    restart a sandbox (re-resolves .git/config mask)
+#   moat ps                list sandboxes
+#   moat audit  [name]     show egress log and tool-call log
+#   moat reload            make running proxies re-read the allowlist
+#   moat clean [--volumes] remove all sandboxes, proxies and networks
+#   moat build [--pull]    (re)build both images
+#   moat config [path|init|show]
+#                     where overrides live; init copies the shipped files there
+#   moat doctor [name]     check the host, and a running sandbox
+#   moat selftest          start a scratch sandbox, run doctor, remove it
+#   moat bootstrap <container> [--rw] [extra-repo ...]
 #
 # Configuration (see lib.sh): shipped defaults here, overrides in
-# $CLAUDE_SANDBOX_CONFIG (default ~/.config/claude-sandbox), and a per-repo
-# <repo>/.claude-sandbox/allowlist.txt that adds domains for that repo.
+# $MOAT_CONFIG (default ~/.config/moat), and a per-repo
+# <repo>/.moat/allowlist.txt that adds domains for that repo.
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOL="sandbox"
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do  # follow symlinks so a link on PATH finds lib.sh
+  d="$(cd "$(dirname "$self")" && pwd)"; self="$(readlink "$self")"
+  case "$self" in /*) ;; *) self="$d/$self" ;; esac
+done
+HERE="$(cd "$(dirname "$self")" && pwd)"; unset self d
+TOOL="moat"
 # shellcheck source=lib.sh
 . "$HERE/lib.sh"
-SANDBOX_IMAGE="${CLAUDE_SANDBOX_IMAGE:-claude-sandbox:local}"
-PROXY_IMAGE="${CLAUDE_PROXY_IMAGE:-claude-proxy:local}"
-EGRESS_NET="claude-egress"
-LABEL="claude.sandbox"
+SANDBOX_IMAGE="${MOAT_IMAGE:-moat-sandbox:local}"
+PROXY_IMAGE="${MOAT_PROXY_IMAGE:-moat-proxy:local}"
+EGRESS_NET="moat-egress"
+LABEL="moat.sandbox"
 # Optional LISTEN:HOST:PORT the proxy forwards with socat, so the sandbox can
 # reach exactly one host port as http://proxy:LISTEN (for a local MCP server or
-# database). Off by default. Example: CLAUDE_SANDBOX_FORWARD=8765:host.docker.internal:8765
-HOST_FORWARD="${CLAUDE_SANDBOX_FORWARD-}"
+# database). Off by default. Example: MOAT_FORWARD=8765:host.docker.internal:8765
+HOST_FORWARD="${MOAT_FORWARD-}"
 PROXY_URL="http://proxy:3128"
 
-sb()  { printf 'claude-%s' "$1"; }
-px()  { printf 'claude-%s-proxy' "$1"; }
-net() { printf 'claude-%s-net' "$1"; }
+sb()  { printf 'moat-%s' "$1"; }
+px()  { printf 'moat-%s-proxy' "$1"; }
+net() { printf 'moat-%s-net' "$1"; }
 
 exists()  { docker container inspect "$1" >/dev/null 2>&1; }
 running() { [ "$(docker container inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "true" ]; }
@@ -61,8 +70,9 @@ ensure_docker() {
 }
 
 ensure_images() {
-  docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1 &&
-  docker image inspect "$PROXY_IMAGE"   >/dev/null 2>&1 || cmd_build
+  if ! docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1 || ! docker image inspect "$PROXY_IMAGE" >/dev/null 2>&1; then
+    cmd_build
+  fi
 }
 
 cmd_build() {
@@ -79,8 +89,8 @@ cmd_build() {
 pick_name() {
   if [ -n "${1:-}" ]; then printf '%s' "$1"; return; fi
   local list
-  list="$(docker ps --filter "label=claude.role=sandbox" \
-    --format '{{.Label "claude.project"}}	{{.Status}}	{{.Label "claude.workspace"}}')"
+  list="$(docker ps --filter "label=moat.role=sandbox" \
+    --format '{{.Label "moat.project"}}	{{.Status}}	{{.Label "moat.workspace"}}')"
   [ -n "$list" ] || die "no running sandboxes"
   if [ "$(printf '%s\n' "$list" | wc -l | tr -d ' ')" -eq 1 ]; then
     printf '%s' "${list%%	*}"
@@ -128,7 +138,7 @@ cmd_up() {
       *) break ;;
     esac
   done
-  [ $# -ge 1 ] || die "usage: sandbox.sh up [--rw] [--rebuild] [--no-attach] <primary> [extra-repo ...]"
+  [ $# -ge 1 ] || die "usage: moat up [--rw] [--rebuild] [--no-attach] <primary> [extra-repo ...]"
 
   local primary
   primary="$(cd "$1" 2>/dev/null && pwd -P)" || die "not a directory: $1"
@@ -148,7 +158,7 @@ cmd_up() {
   ensure_images
 
   # Reuse an existing sandbox when its mounts are unchanged.
-  if exists "$sbx" && [ $rebuild -eq 0 ] && [ "$(label "$sbx" claude.spec)" = "$spec" ]; then
+  if exists "$sbx" && [ $rebuild -eq 0 ] && [ "$(label "$sbx" moat.spec)" = "$spec" ]; then
     if ! running "$sbx"; then
       info "Starting $sbx"
       docker start "$prx" "$sbx" >/dev/null
@@ -167,7 +177,7 @@ cmd_up() {
   local adir; adir="$(allowlist_dir "$name" "$primary")"
   info "Starting proxy $prx (allowlist: $adir/allowlist.txt)"
   docker create --name "$prx" \
-    --label "$LABEL=1" --label "claude.role=proxy" --label "claude.project=$name" \
+    --label "$LABEL=1" --label "moat.role=proxy" --label "moat.project=$name" \
     --network "$nw" --network-alias proxy \
     --add-host host.docker.internal:host-gateway \
     --mount "type=bind,source=$adir,target=/etc/claude-proxy,readonly" \
@@ -187,14 +197,14 @@ cmd_up() {
 
   info "Starting sandbox $sbx"
   docker run -d --name "$sbx" \
-    --label "$LABEL=1" --label "claude.role=sandbox" --label "claude.project=$name" \
-    --label "claude.workspace=$primary" --label "claude.spec=$spec" \
+    --label "$LABEL=1" --label "moat.role=sandbox" --label "moat.project=$name" \
+    --label "moat.workspace=$primary" --label "moat.spec=$spec" \
     --network "$nw" \
     --cap-drop ALL --security-opt no-new-privileges \
     --user node --workdir /workspace \
     "${mounts[@]}" \
-    --mount "type=volume,source=claude-$name-config,target=/home/node/.claude" \
-    --mount "type=volume,source=claude-$name-history,target=/commandhistory" \
+    --mount "type=volume,source=moat-$name-config,target=/home/node/.claude" \
+    --mount "type=volume,source=moat-$name-history,target=/commandhistory" \
     -e "HTTP_PROXY=$PROXY_URL"  -e "HTTPS_PROXY=$PROXY_URL" \
     -e "http_proxy=$PROXY_URL"  -e "https_proxy=$PROXY_URL" \
     -e "NO_PROXY=proxy,localhost,127.0.0.1" \
@@ -244,6 +254,7 @@ p.write_text(json.dumps(d))
 PY
 
   docker exec -i "$c" sh -c 'cat > /home/node/.claude/settings.json' < "$SETTINGS"
+  docker exec -i "$c" sh -c 'mkdir -p /home/node/.claude/skills/moat && cat > /home/node/.claude/skills/moat/SKILL.md' < "$HERE/skills/moat/SKILL.md"
 
   # Bind mounts from a Windows filesystem show up root-owned; tell git inside
   # that the mounted repos are ours.
@@ -296,9 +307,9 @@ cmd_attach() {
   [ $# -gt 0 ] && { parse_claude_opts "$@"; set -- ${REST[@]+"${REST[@]}"}; }
   local name; name="$(pick_name "${1:-}")" || return 0
   local sbx; sbx="$(sb "$name")"
-  running "$sbx" || die "$sbx is not running (try: sandbox.sh up <dir>)"
+  running "$sbx" || die "$sbx is not running (try: moat up <dir>)"
   local token; token="$(oauth_token)"
-  git_identity_env "$(label "$sbx" claude.workspace)"
+  git_identity_env "$(label "$sbx" moat.workspace)"
   docker exec -it \
     -e "CLAUDE_CODE_OAUTH_TOKEN=$token" \
     ${GIT_ENV[@]+"${GIT_ENV[@]}"} \
@@ -308,7 +319,7 @@ cmd_attach() {
 cmd_shell() {
   local name; name="$(pick_name "${1:-}")" || return 0
   local sbx; sbx="$(sb "$name")"
-  git_identity_env "$(label "$sbx" claude.workspace)"
+  git_identity_env "$(label "$sbx" moat.workspace)"
   docker exec -it ${GIT_ENV[@]+"${GIT_ENV[@]}"} "$sbx" zsh
 }
 
@@ -320,8 +331,8 @@ cmd_restart() {
 }
 
 cmd_ps() {
-  docker ps -a --filter "label=claude.role=sandbox" \
-    --format 'table {{.Label "claude.project"}}\t{{.Status}}\t{{.Label "claude.workspace"}}'
+  docker ps -a --filter "label=moat.role=sandbox" \
+    --format 'table {{.Label "moat.project"}}\t{{.Status}}\t{{.Label "moat.workspace"}}'
 }
 
 cmd_audit() {
@@ -332,15 +343,42 @@ cmd_audit() {
   docker exec "$(sb "$name")" cat /home/node/.claude/audit.log 2>/dev/null || echo "(none)"
 }
 
-# Regenerate each running project's merged allowlist and make squid re-read it.
+# Regenerate each running project's merged allowlist, make squid re-read it,
+# and copy the current settings.json into the sandbox.
 cmd_reload() {
   local c name ws n=0
-  for c in $(docker ps -q --filter "label=claude.role=sandbox"); do
-    name="$(label "$c" claude.project)"; ws="$(label "$c" claude.workspace)"
+  for c in $(docker ps -q --filter "label=moat.role=sandbox"); do
+    name="$(label "$c" moat.project)"; ws="$(label "$c" moat.workspace)"
     allowlist_dir "$name" "$ws" >/dev/null
-    docker kill -s HUP "$(px "$name")" >/dev/null 2>&1 && n=$((n + 1))
+    docker kill -s HUP "$(px "$name")" >/dev/null 2>&1 || true
+    docker exec -i "$c" sh -c 'cat > /home/node/.claude/settings.json' < "$SETTINGS"
+    n=$((n + 1))
   done
-  info "reloaded allowlist in $n prox(y|ies)"
+  info "reloaded allowlist and settings in $n sandbox(es)"
+}
+
+cmd_config() {
+  case "${1:-path}" in
+    path) printf '%s\n' "$CONFIG_DIR" ;;
+    init)
+      mkdir -p "$CONFIG_DIR"
+      [ -f "$CONFIG_DIR/settings.json" ] || { cp "$HERE/settings.json" "$CONFIG_DIR/settings.json"; info "created $CONFIG_DIR/settings.json (copy of the shipped file)"; }
+      [ -f "$CONFIG_DIR/plugins.txt" ]   || { cp "$HERE/plugins.txt" "$CONFIG_DIR/plugins.txt"; info "created $CONFIG_DIR/plugins.txt"; }
+      [ -f "$CONFIG_DIR/allowlist.txt" ] || { printf '# Extra domains, merged with the shipped allowlist. One per line; .example.com matches subdomains.\n' > "$CONFIG_DIR/allowlist.txt"; info "created $CONFIG_DIR/allowlist.txt"; }
+      info "edit the files, then: moat reload"
+      ;;
+    show)
+      printf 'config dir:   %s\nstate dir:    %s\n' "$CONFIG_DIR" "$STATE_DIR"
+      local f
+      for f in settings.json plugins.txt mcp.json; do
+        if [ -f "$(cfg "$f")" ]; then printf '%-13s %s\n' "$f" "$(cfg "$f")"; else printf '%-13s (none)\n' "$f"; fi
+      done
+      printf 'allowlist:    %s\n' "$HERE/proxy/allowlist.txt"
+      [ -f "$CONFIG_DIR/allowlist.txt" ] && printf '              + %s\n' "$CONFIG_DIR/allowlist.txt"
+      printf '              + <repo>/.moat/allowlist.txt when present\n'
+      ;;
+    *) die "usage: moat config [path|init|show]" ;;
+  esac
 }
 
 cmd_clean() {
@@ -361,6 +399,77 @@ cmd_clean() {
   fi
 }
 
+# doctor [name]: verify the host, then every isolation property of a running
+# sandbox: the given one, or the first one running. Exit status is the number
+# of failed checks.
+cmd_doctor() {
+  local fails=0
+  ok()   { printf '  ok    %s\n' "$*"; }
+  bad()  { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
+  warn() { printf '  warn  %s\n' "$*"; }
+
+  echo "host"
+  if command -v docker >/dev/null 2>&1; then ok "docker cli $(docker version --format '{{.Client.Version}}' 2>/dev/null)"; else bad "docker cli missing"; fi
+  if docker info >/dev/null 2>&1; then ok "docker daemon running"; else bad "docker daemon not running"; fi
+  local i
+  for i in "$SANDBOX_IMAGE" "$PROXY_IMAGE"; do
+    if docker image inspect "$i" >/dev/null 2>&1; then ok "image $i"; else warn "image $i not built ($TOOL build)"; fi
+  done
+  if command -v git >/dev/null 2>&1; then ok "git"; else bad "git missing"; fi
+  if command -v jq >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then ok "jq or python3"; else bad "need jq or python3"; fi
+  local tok
+  if tok="$(oauth_token 2>/dev/null)"; then ok "claude credential found (${#tok} chars)"; else warn "no Claude credential: needed to attach, not to run checks"; fi
+  if [ -d "$CONFIG_DIR" ]; then ok "config overrides in $CONFIG_DIR"; else ok "no config overrides, shipped defaults apply"; fi
+
+  local name="${1:-}"
+  [ -n "$name" ] || name="$(docker ps --filter "label=moat.role=sandbox" --format '{{.Label "moat.project"}}' 2>/dev/null | head -1)"
+  if [ -z "$name" ]; then
+    echo; echo "no running sandbox to check (start one: $TOOL up <dir>)"
+    return $fails
+  fi
+  local sbx prx; sbx="$(sb "$name")"; prx="$(px "$name")"
+  echo; echo "sandbox $name"
+  if running "$sbx"; then ok "container running"; else bad "container not running"; echo; return $fails; fi
+  if running "$prx"; then ok "proxy running"; else bad "proxy not running"; fi
+  X() { docker exec "$sbx" sh -c "$1"; }
+  if [ "$(X 'id -u' 2>/dev/null)" != "0" ]; then ok "unprivileged user $(X 'id -un' 2>/dev/null)"; else bad "running as root"; fi
+  if [ "$(X 'grep CapEff /proc/self/status' 2>/dev/null | awk '{print $2}')" = "0000000000000000" ]; then ok "no capabilities"; else bad "capabilities present"; fi
+  if X 'command -v sudo' >/dev/null 2>&1; then bad "sudo present"; else ok "no sudo"; fi
+  if X 'awk '"'"'NR>1 && $2=="00000000"{f=1} END{exit !f}'"'"' /proc/net/route' 2>/dev/null; then bad "default route present"; else ok "no default route"; fi
+  if X 'curl --noproxy "*" -s --max-time 5 -o /dev/null https://api.anthropic.com/' 2>/dev/null; then bad "direct egress possible"; else ok "direct egress blocked"; fi
+  if X 'curl -s --max-time 15 -o /dev/null https://api.anthropic.com/' 2>/dev/null; then ok "api.anthropic.com reachable through the proxy"; else bad "api.anthropic.com not reachable through the proxy"; fi
+  if X 'curl -s --max-time 15 -o /dev/null https://example.com/' 2>/dev/null; then bad "unlisted domain reachable (allowlist not enforced)"; else ok "unlisted domain blocked"; fi
+  if X 'test -d /workspace/.git' 2>/dev/null; then
+    if X 'touch /workspace/.git/hooks/.doctor' 2>/dev/null; then bad ".git/hooks writable"; X 'rm -f /workspace/.git/hooks/.doctor' 2>/dev/null; else ok ".git/hooks read-only"; fi
+    if X 'git -C /workspace config doctor.probe 1' 2>/dev/null; then bad ".git/config writable"; X 'git -C /workspace config --unset doctor.probe' 2>/dev/null; else ok ".git/config read-only"; fi
+  fi
+  if X 'test -s /home/node/.claude/settings.json' 2>/dev/null; then ok "settings.json installed"; else bad "settings.json missing"; fi
+  if X 'test -x /usr/local/bin/moat-audit-hook && test -x /usr/local/bin/moat-statusline' 2>/dev/null; then ok "audit hook and status line installed"; else bad "audit hook or status line missing"; fi
+  local v; if v="$(X 'claude --version' 2>/dev/null)"; then ok "claude ${v%% *}"; else bad "claude not runnable"; fi
+  echo
+  if [ $fails -eq 0 ]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
+  return $fails
+}
+
+# selftest: bring up a sandbox on a scratch repo with no plugins, run doctor
+# against it, and remove it again. Used by CI.
+cmd_selftest() {
+  ensure_docker; ensure_images
+  local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/moat-selftest.XXXXXX")"
+  local repo="$tmp/selftest" cfg="$tmp/config"
+  mkdir -p "$repo" "$cfg"
+  git -C "$repo" init -q
+  git -C "$repo" -c user.name=selftest -c user.email=selftest@example.invalid commit -q --allow-empty -m init
+  printf '# selftest: no plugins\n' > "$cfg/plugins.txt"
+  local rc=0
+  MOAT_CONFIG="$cfg" MOAT_STATE="$tmp/state" "$0" up --no-attach "$repo" || rc=$?
+  if [ $rc -eq 0 ]; then "$0" doctor selftest || rc=$?; fi
+  remove_project selftest
+  docker volume rm moat-selftest-config moat-selftest-history >/dev/null 2>&1 || true
+  rm -rf "$tmp"
+  return $rc
+}
+
 case "${1:-help}" in
   up)        shift; cmd_up "$@" ;;
   attach)    shift; cmd_attach "$@" ;;
@@ -371,7 +480,10 @@ case "${1:-help}" in
   reload)    cmd_reload ;;
   clean)     shift; cmd_clean "$@" ;;
   build)     shift; cmd_build "$@" ;;
+  config)    shift; cmd_config "$@" ;;
+  doctor)    shift; cmd_doctor "$@" ;;
+  selftest)  cmd_selftest ;;
   bootstrap) shift; cmd_bootstrap "$@" ;;
   help|-h|--help) usage ;;
-  *) die "unknown command: $1 (see sandbox.sh help)" ;;
+  *) die "unknown command: $1 (see moat help)" ;;
 esac

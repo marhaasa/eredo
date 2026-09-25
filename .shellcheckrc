@@ -1,0 +1,4 @@
+# Single quotes are deliberate: the strings are shell commands run inside the container.
+disable=SC2016
+# lib.sh defines variables for the scripts that source it.
+disable=SC2034
