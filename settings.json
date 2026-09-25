@@ -1,5 +1,8 @@
 {
+  "model": "fable[1m]",
+  "effortLevel": "high",
   "permissions": {
+    "defaultMode": "auto",
     "allow": [
       "Bash(ls:*)",
       "Bash(cat:*)",
@@ -34,10 +37,34 @@
       "Read(./**/.env)",
       "Read(./**/.env.*)",
       "Read(./**/*.pem)",
-      "Read(./**/*.key)"
+      "Read(./**/*.key)",
+      "Edit(./.git/**)",
+      "Write(./.git/**)"
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/claude-audit-hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/claude-audit-hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "hooks": [
@@ -49,5 +76,10 @@
         ]
       }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/usr/local/bin/claude-sandbox-statusline",
+    "padding": 0
   }
 }

@@ -7,11 +7,16 @@
 # every capability dropped. The sidecar owns the domain allowlist, so nothing
 # Claude runs can widen it.
 #
-#   sandbox.sh up [--rw] [--rebuild] [--no-attach] <primary> [extra-repo ...]
+#   sandbox.sh up [--rw] [--rebuild] [--no-attach] [claude opts] <primary> [extra-repo ...]
 #                     start (or reuse) the sandbox for <primary> and attach.
 #                     Extra repos are mounted read-only under /home/node/<name>
 #                     unless --rw is given. --no-attach just starts it.
-#   sandbox.sh attach [name]     attach Claude Code to a running sandbox
+#   sandbox.sh attach [name] [claude opts]
+#                     attach Claude Code to a running sandbox. Claude opts:
+#                     --model M, --effort E, --mode P (default, acceptEdits,
+#                     plan, auto, dontAsk, bypassPermissions); persistent
+#                     defaults are model, effortLevel and permissions.defaultMode
+#                     in settings.json
 #   sandbox.sh shell  [name]     open a zsh in a running sandbox
 #   sandbox.sh restart [name]    restart a sandbox (re-resolves .git/config mask)
 #   sandbox.sh ps                list sandboxes
@@ -20,28 +25,25 @@
 #   sandbox.sh clean [--volumes] remove all sandboxes, proxies and networks
 #   sandbox.sh build [--pull]    (re)build both images
 #   sandbox.sh bootstrap <container> [--rw] [extra-repo ...]
+#
+# Configuration (see lib.sh): shipped defaults here, overrides in
+# $CLAUDE_SANDBOX_CONFIG (default ~/.config/claude-sandbox), and a per-repo
+# <repo>/.claude-sandbox/allowlist.txt that adds domains for that repo.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOL="sandbox"
+# shellcheck source=lib.sh
+. "$HERE/lib.sh"
 SANDBOX_IMAGE="${CLAUDE_SANDBOX_IMAGE:-claude-sandbox:local}"
 PROXY_IMAGE="${CLAUDE_PROXY_IMAGE:-claude-proxy:local}"
 EGRESS_NET="claude-egress"
 LABEL="claude.sandbox"
-SETTINGS="$HERE/settings.json"
-PLUGINS="$HERE/plugins.txt"
-MCP="$HERE/mcp.json"
 # Optional LISTEN:HOST:PORT the proxy forwards with socat, so the sandbox can
 # reach exactly one host port as http://proxy:LISTEN (for a local MCP server or
 # database). Off by default. Example: CLAUDE_SANDBOX_FORWARD=8765:host.docker.internal:8765
 HOST_FORWARD="${CLAUDE_SANDBOX_FORWARD-}"
 PROXY_URL="http://proxy:3128"
-
-BG_ACTIVE='\033]11;#282828\033\\'
-BG_NORMAL='\033]11;#1d2021\033\\'
-
-die()  { printf 'sandbox: %s\n' "$*" >&2; exit 1; }
-info() { printf '%s\n' "$*" >&2; }
-need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found"; }
 
 sb()  { printf 'claude-%s' "$1"; }
 px()  { printf 'claude-%s-proxy' "$1"; }
@@ -69,7 +71,7 @@ cmd_build() {
   info "Building $PROXY_IMAGE"
   docker build $pull -t "$PROXY_IMAGE" "$HERE/proxy"
   info "Building $SANDBOX_IMAGE"
-  docker build $pull --build-arg "TZ=${TZ:-Europe/Oslo}" -t "$SANDBOX_IMAGE" "$HERE/sandbox"
+  docker build $pull --build-arg "TZ=$(host_tz)" -t "$SANDBOX_IMAGE" "$HERE/sandbox"
 }
 
 # Print the project name of a running sandbox: the given one, the only one, or
@@ -90,12 +92,6 @@ pick_name() {
   fi
 }
 
-oauth_token() {
-  security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-    | python3 -c 'import sys, json; print(json.load(sys.stdin)["claudeAiOauth"]["accessToken"])' 2>/dev/null \
-    || die "could not read the Claude Code OAuth token from the keychain (run claude on the host and log in)"
-}
-
 # Mask the two places under .git where a write would execute code on the host
 # the next time the user runs git there: hooks (empty, read-only tmpfs) and
 # config (read-only bind: core.hooksPath, fsmonitor, pager, filters, ...).
@@ -113,19 +109,6 @@ add_git_masks() {
   fi
 }
 
-# Git identity for commits made inside the sandbox, resolved on the host from
-# the workspace's effective config (repo, then global). Fills GIT_ENV.
-GIT_ENV=()
-git_identity_env() {
-  local ws="$1" name email
-  GIT_ENV=()
-  name="$(git -C "$ws" config --get user.name 2>/dev/null || true)"
-  email="$(git -C "$ws" config --get user.email 2>/dev/null || true)"
-  [ -n "$name" ]  && GIT_ENV+=(-e "GIT_AUTHOR_NAME=$name"   -e "GIT_COMMITTER_NAME=$name")
-  [ -n "$email" ] && GIT_ENV+=(-e "GIT_AUTHOR_EMAIL=$email" -e "GIT_COMMITTER_EMAIL=$email")
-  return 0
-}
-
 remove_project() {
   local name="$1"
   docker rm -f "$(sb "$name")" "$(px "$name")" >/dev/null 2>&1 || true
@@ -133,6 +116,7 @@ remove_project() {
 }
 
 cmd_up() {
+  parse_claude_opts "$@"; set -- ${REST[@]+"${REST[@]}"}
   local rw=0 rebuild=0 attach=1
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -157,7 +141,7 @@ cmd_up() {
   local name sbx prx nw
   name="$(basename "$primary")"
   sbx="$(sb "$name")"; prx="$(px "$name")"; nw="$(net "$name")"
-  local spec="v3 $primary rw=$rw ${extras[*]-}"
+  local spec="v5 $primary rw=$rw ${extras[*]-}"
 
   ensure_docker
   [ $rebuild -eq 1 ] && cmd_build
@@ -180,12 +164,13 @@ cmd_up() {
   docker network inspect "$EGRESS_NET" >/dev/null 2>&1 || docker network create "$EGRESS_NET" >/dev/null
   docker network inspect "$nw" >/dev/null 2>&1 || docker network create --internal --label "$LABEL=1" "$nw" >/dev/null
 
-  info "Starting proxy $prx"
+  local adir; adir="$(allowlist_dir "$name" "$primary")"
+  info "Starting proxy $prx (allowlist: $adir/allowlist.txt)"
   docker create --name "$prx" \
     --label "$LABEL=1" --label "claude.role=proxy" --label "claude.project=$name" \
     --network "$nw" --network-alias proxy \
     --add-host host.docker.internal:host-gateway \
-    --mount "type=bind,source=$HERE/proxy,target=/etc/claude-proxy,readonly" \
+    --mount "type=bind,source=$adir,target=/etc/claude-proxy,readonly" \
     -e "FORWARD=$HOST_FORWARD" \
     "$PROXY_IMAGE" >/dev/null
   docker network connect "$EGRESS_NET" "$prx"
@@ -215,6 +200,7 @@ cmd_up() {
     -e "NO_PROXY=proxy,localhost,127.0.0.1" \
     -e "no_proxy=proxy,localhost,127.0.0.1" \
     -e CLAUDE_CONFIG_DIR=/home/node/.claude \
+    -e "CLAUDE_PROJECT_NAME=$name" \
     -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
     -e DISABLE_TELEMETRY=1 \
     -e DISABLE_ERROR_REPORTING=1 \
@@ -259,6 +245,12 @@ PY
 
   docker exec -i "$c" sh -c 'cat > /home/node/.claude/settings.json' < "$SETTINGS"
 
+  # Bind mounts from a Windows filesystem show up root-owned; tell git inside
+  # that the mounted repos are ours.
+  local safe=(/workspace) e
+  for e in "$@"; do safe+=("/home/node/$(basename "$e")"); done
+  git_safe_dirs "$c" "${safe[@]}"
+
   if [ -f "$MCP" ]; then
     docker exec -i "$c" bash -c '
       jq -c ".mcpServers // {} | to_entries[]" | while read -r entry; do
@@ -288,7 +280,7 @@ PY
   fi
 
   if [ $# -gt 0 ]; then
-    local mode="read-only" e
+    local mode="read-only"
     [ $rw -eq 1 ] && mode="read-write"
     {
       printf '# Multi-repo workspace\n\nPrimary workspace: /workspace (read-write)\n\nAdditional repos (%s):\n' "$mode"
@@ -301,18 +293,16 @@ PY
 }
 
 cmd_attach() {
+  [ $# -gt 0 ] && { parse_claude_opts "$@"; set -- ${REST[@]+"${REST[@]}"}; }
   local name; name="$(pick_name "${1:-}")" || return 0
   local sbx; sbx="$(sb "$name")"
   running "$sbx" || die "$sbx is not running (try: sandbox.sh up <dir>)"
   local token; token="$(oauth_token)"
   git_identity_env "$(label "$sbx" claude.workspace)"
-  printf "$BG_ACTIVE"
   docker exec -it \
     -e "CLAUDE_CODE_OAUTH_TOKEN=$token" \
-    -e "CLAUDE_PROJECT_NAME=$name" \
     ${GIT_ENV[@]+"${GIT_ENV[@]}"} \
-    "$sbx" bash -c 'clear; exec claude' || true
-  printf "$BG_NORMAL"
+    "$sbx" bash -c 'clear; exec claude "$@"' claude ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"} || true
 }
 
 cmd_shell() {
@@ -342,10 +332,13 @@ cmd_audit() {
   docker exec "$(sb "$name")" cat /home/node/.claude/audit.log 2>/dev/null || echo "(none)"
 }
 
+# Regenerate each running project's merged allowlist and make squid re-read it.
 cmd_reload() {
-  local c n=0
-  for c in $(docker ps -q --filter "label=claude.role=proxy"); do
-    docker kill -s HUP "$c" >/dev/null && n=$((n + 1))
+  local c name ws n=0
+  for c in $(docker ps -q --filter "label=claude.role=sandbox"); do
+    name="$(label "$c" claude.project)"; ws="$(label "$c" claude.workspace)"
+    allowlist_dir "$name" "$ws" >/dev/null
+    docker kill -s HUP "$(px "$name")" >/dev/null 2>&1 && n=$((n + 1))
   done
   info "reloaded allowlist in $n prox(y|ies)"
 }

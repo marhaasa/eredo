@@ -7,7 +7,7 @@ the mounted repo and can only talk to an allowlist of domains.
  host ──docker exec──▶ claude-<project>            claude-<project>-proxy ──▶ internet
                        node user, cap-drop ALL     squid: CONNECT :443 to
                        no sudo, no iptables        allowlisted domains only
-                       HTTPS_PROXY=http://proxy    socat :8765 -> host:8765 (MCP)
+                       HTTPS_PROXY=http://proxy    (optional socat forward to one host port)
                        └─────── claude-<project>-net (internal, no gateway) ───────┘
 ```
 
@@ -49,18 +49,71 @@ claude-containers/sandbox.sh up --rebuild . # rebuild image and recreate the san
   `api.anthropic.com`, where it goes anyway.
 - Telemetry, error reporting, feature flags and auto-update are disabled, so
   the only destination Claude Code itself needs is `api.anthropic.com`.
-- `settings.json` allows read-only commands and read-only git, denies
+- The status line inside the sandbox reads "sandboxed · project · branch ·
+  model · effort · permission mode · context", with "sandboxed" in deep red,
+  rendered by Claude Code itself, so the cue is the same on every platform
+  and terminal. The mode comes from the hook, which records it on every
+  event, so it can lag one prompt behind a Shift+Tab toggle. Host sessions have no status line, so the contrast
+  is immediate.
+- `settings.json` starts Claude in auto mode, allows read-only commands and read-only git, denies
   `git push` and `git remote`, denies Read on `.env*`, `.pem` and `.key`
-  files, and logs every tool call through a PreToolUse hook to
-  `~/.claude/audit.log` in the config volume.
-- `mcp.json` lists MCP servers to register at user scope. The default entry
-  reaches the host's reminders server through the proxy's socat forward
-  (`CLAUDE_MCP_FORWARD`, default `8765:host.docker.internal:8765`). Inside
-  the sandbox the name `host.docker.internal` resolves to the proxy, so only
-  that one forwarded port reaches the host and the server sees a Host header
-  it accepts.
+  files, denies `WebSearch` (it runs on Anthropic's servers, so the proxy
+  never sees it), and logs every tool call through a PreToolUse hook to
+  `~/.claude/audit.log` in the config volume. `WebFetch` stays: it fetches
+  from inside the sandbox, so the allowlist governs it.
 - `plugins.txt` lists plugins installed on first start. Plugins that talk to
-  remote MCP servers need their domains added to the allowlist.
+  remote MCP servers need their domains in the allowlist; `mcp.context7.com`
+  is there for the context7 plugin.
+- An optional `mcp.json` (`{"mcpServers": {...}}`, Claude Code's own shape)
+  registers MCP servers at user scope on first start. To reach a service on
+  the host, set `CLAUDE_SANDBOX_FORWARD=LISTEN:host.docker.internal:PORT`
+  before `up`; the proxy then forwards `proxy:LISTEN` to that one host port.
+
+## Configuration
+
+Shipped defaults live in this directory. Override them without editing the
+repo, highest precedence first:
+
+| Where | What |
+| --- | --- |
+| `<repo>/.claude-sandbox/allowlist.txt` | extra domains for that repo only, merged in |
+| `~/.config/claude-sandbox/` (`CLAUDE_SANDBOX_CONFIG`) | `allowlist.txt` is merged; `settings.json`, `plugins.txt` and `mcp.json` replace the shipped file |
+| `claude-containers/` | the defaults |
+
+Merged allowlists are written per project under `~/.local/state/claude-sandbox/`
+(`CLAUDE_SANDBOX_STATE`) and mounted into the proxy. `sandbox.sh reload`
+regenerates them and makes squid re-read. A per-repo list only takes effect
+when you run `up` or `reload` on the host, so an edit Claude makes to it
+cannot widen its own sandbox.
+
+What Claude starts as is set in `settings.json`: `model`, `effortLevel` and
+`permissions.defaultMode` (shipped: fable[1m], high, auto). Override for
+one run with `--model`, `--effort` and `--mode` on `up` or `attach`, or the
+`CLAUDE_SANDBOX_MODEL`, `CLAUDE_SANDBOX_EFFORT` and `CLAUDE_SANDBOX_MODE`
+variables; they become `--model`, `--effort` and `--permission-mode` on the
+claude command inside.
+
+Environment variables: `CLAUDE_SANDBOX_IMAGE` and `CLAUDE_PROXY_IMAGE` (image
+names), `CLAUDE_SANDBOX_FORWARD` (one host port), `CLAUDE_CODE_OAUTH_TOKEN`
+(skip the credential lookup).
+
+## Linux and Windows
+
+The Docker parts are the same everywhere. What differs is where the Claude
+credential comes from and how the repo is mounted.
+
+- **Credential.** The token is read from `CLAUDE_CODE_OAUTH_TOKEN` if set,
+  else the macOS keychain, else `~/.claude/.credentials.json`, which is where
+  Claude Code stores it on Linux and WSL. `claude setup-token` gives a
+  long-lived token for the first form.
+- **Linux.** Docker Engine works as is; `host.docker.internal` is provided
+  through `host-gateway`.
+- **Windows.** Run the scripts inside WSL2 with Docker Desktop's WSL
+  integration. Keep repos on the WSL filesystem: bind mounts from `C:` are
+  slow and show up root-owned inside the container, which is why bootstrap
+  adds `safe.directory` entries for every mounted repo. `.gitattributes`
+  keeps the scripts LF even when Git for Windows checks them out. Native
+  PowerShell is not supported; that would be a port, not a fix.
 
 ## Git from both sides
 
@@ -90,12 +143,53 @@ commits inside the sandbox and the commit is in your host `git log` at once.
 | File | Purpose |
 | --- | --- |
 | `sandbox.sh` | Orchestration: networks, proxy, sandbox, bootstrap, attach |
+| `lib.sh` | Shared by both scripts: config resolution, allowlist merge, credential lookup, identity |
+| `.gitattributes` | LF line endings for everything here |
 | `sandbox/Dockerfile` | Sandbox image: node 22, git, gh, rg, fd, jq, zsh, neovim, Claude Code (native installer) |
 | `sandbox/audit-hook.sh` | PreToolUse hook that appends tool calls to `audit.log` |
+| `sandbox/statusline.sh` | Status line marking the session as sandboxed |
 | `proxy/Dockerfile`, `proxy/squid.conf`, `proxy/entrypoint.sh` | Proxy sidecar image |
-| `proxy/allowlist.txt` | Domains the sandbox may reach (squid `dstdomain` syntax, bind-mounted read-only) |
+| `proxy/allowlist.txt` | Default domains the sandbox may reach (squid `dstdomain` syntax); merged with overrides |
 | `settings.json` | Claude Code settings copied into each sandbox |
-| `mcp.json`, `plugins.txt` | MCP servers and plugins registered on first start |
+| `docker-sandbox.sh` | Same commands on Docker's agent sandboxes, for comparison |
+| `plugins.txt` | Plugins installed on first start (optional `mcp.json` registers MCP servers) |
+
+## docker-sandbox.sh: the same setup on Docker Sandboxes
+
+`docker-sandbox.sh` has the same commands as `sandbox.sh` and reads the same
+`proxy/allowlist.txt`, `settings.json`, `plugins.txt` and audit hook, but runs
+Claude in one of Docker Desktop's agent sandboxes (`docker sandbox`, a microVM
+per project) instead of a container. It exists so the two can be compared
+like for like; `ARCHITECTURE.md` draws the differences. Nothing in the zsh
+functions points at it; call it directly.
+
+```bash
+claude-containers/docker-sandbox.sh up ~/Repos/github.com/marhaasa/Doll
+claude-containers/docker-sandbox.sh audit Doll
+claude-containers/docker-sandbox.sh clean
+```
+
+What the script adds on top of Docker's defaults, so the comparison is fair:
+default-deny network policy generated from the allowlist with Docker's own
+built-in allow rules blocked, the shared `settings.json` (prompts instead of
+Docker's bypassPermissions), the audit hook, git identity from the host, and
+removal of the agent user's passwordless sudo and Docker socket access.
+
+| | `sandbox.sh` | `docker-sandbox.sh` |
+| --- | --- | --- |
+| Boundary | container in Docker Desktop's VM, `--cap-drop ALL` | one microVM per project |
+| Egress | squid sidecar, CONNECT only, no decryption | Docker's host proxy, TLS-intercepting |
+| Allowlist | yours alone | yours, plus Docker's built-ins blocked by port |
+| Claude credential | host OAuth token as env var per attach | `/login` once inside; token stays on the host |
+| `.git/hooks`, `.git/config` | masked read-only | writable: the sandbox refuses mounts over the workspace |
+| Root inside | none | removed by the script; Docker gives it by default |
+| Audit | proxy log per request plus tool log | Docker per-host counters plus tool log |
+| Startup | seconds | about 20 s to create, seconds to reuse |
+| Requirements | Docker Desktop | Docker Desktop with the sandbox plugin, Docker account for `sbx` |
+
+The `.git` row is the one that matters for the commit-inside, push-on-host
+workflow: with Docker's sandbox the only protection for hooks and config is
+that Claude asks before running commands that write there.
 
 ## Not covered
 

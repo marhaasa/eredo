@@ -38,9 +38,11 @@ RUN mkdir -p /commandhistory && touch /commandhistory/.bash_history && chown -R 
 RUN mkdir -p /workspace /home/node/.claude /home/node/.local/bin /home/node/.local/share && \
   chown -R node:node /workspace /home/node/.claude /home/node/.local
 
-# PreToolUse hook that appends every tool call to ~/.claude/audit.log
+# PreToolUse hook that appends every tool call to ~/.claude/audit.log, and the
+# status line that marks the session as sandboxed.
 COPY audit-hook.sh /usr/local/bin/claude-audit-hook
-RUN chmod 0755 /usr/local/bin/claude-audit-hook
+COPY statusline.sh /usr/local/bin/claude-sandbox-statusline
+RUN chmod 0755 /usr/local/bin/claude-audit-hook /usr/local/bin/claude-sandbox-statusline
 
 WORKDIR /workspace
 USER node
