@@ -1,8 +1,13 @@
 # eredo
 
-Run Claude Code against a private repo inside a Docker sandbox that can only
-see that repo and can only talk to the domains you list. You keep working on
-the host as usual; Claude works on the same files from inside the eredo.
+A coding agent that can read your files, run commands and reach the internet
+is only as safe as the worst instruction it ever follows, whether that comes
+from you, from a file in the repo or from a page it fetched. eredo runs
+Claude Code where a bad instruction cannot do lasting harm: a Docker sandbox
+that sees only the repo you name, reaches only the domains you allow, and
+cannot touch your credentials, your other projects or your machine. You keep
+working on the host with your own editor, git and keys; Claude works on the
+same files from inside.
 
 ```
  host ──docker exec──▶ eredo-<project>              eredo-<project>-proxy ──▶ internet
