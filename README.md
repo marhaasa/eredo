@@ -26,8 +26,9 @@ the macOS keychain or `~/.claude/.credentials.json`, or you export
 ## Install
 
 ```bash
-git clone https://github.com/marhaasa/moat.git ~/Repos/github.com/marhaasa/moat
-ln -s ~/Repos/github.com/marhaasa/moat/moat ~/.local/bin/moat   # anywhere on PATH
+git clone https://github.com/marhaasa/moat.git
+ln -s "$PWD/moat/moat" ~/.local/bin/moat        # or anywhere else on your PATH
+ln -s "$PWD/moat/skills/moat" ~/.claude/skills/moat   # optional: lets Claude configure moat for you
 moat doctor
 ```
 
