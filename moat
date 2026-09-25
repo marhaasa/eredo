@@ -7,6 +7,9 @@
 # every capability dropped. The sidecar owns the domain allowlist, so nothing
 # Claude runs can widen it.
 #
+#   moat                   same as `moat up .` when the current directory is a git repo
+#   moat install [bindir]  link moat into ~/.local/bin (unless already on PATH) and the
+#                          skill into ~/.claude/skills, so Claude can configure moat
 #   moat up [--rw] [--rebuild] [--no-attach] [claude opts] <primary> [extra-repo ...]
 #                     start (or reuse) the sandbox for <primary> and attach.
 #                     Extra repos are mounted read-only under /home/node/<name>
@@ -357,6 +360,26 @@ cmd_reload() {
   info "reloaded allowlist and settings in $n sandbox(es)"
 }
 
+# install [bindir]: make `moat` available on PATH and give Claude Code the
+# moat skill. Idempotent; safe to run after `git pull` or a Homebrew install.
+cmd_install() {
+  local bindir="${1:-$HOME/.local/bin}" have
+  have="$(command -v moat 2>/dev/null || true)"
+  if [ -z "$have" ] || [ "$have" = "$bindir/moat" ]; then
+    mkdir -p "$bindir"
+    ln -sfn "$HERE/moat" "$bindir/moat"
+    ln -sfn "$HERE/moat-docker" "$bindir/moat-docker"
+    info "linked moat and moat-docker into $bindir"
+    case ":$PATH:" in *":$bindir:"*) ;; *) info "note: $bindir is not on your PATH" ;; esac
+  else
+    info "moat already on PATH: $have"
+  fi
+  mkdir -p "$HOME/.claude/skills"
+  ln -sfn "$HERE/skills/moat" "$HOME/.claude/skills/moat"
+  info "skill linked into ~/.claude/skills/moat: ask Claude to allow a domain or add a plugin"
+  info "next: cd into a repo and run: moat"
+}
+
 cmd_config() {
   case "${1:-path}" in
     path) printf '%s\n' "$CONFIG_DIR" ;;
@@ -489,7 +512,10 @@ cmd_selftest() {
   return $rc
 }
 
-case "${1:-help}" in
+case "${1:-}" in
+  "")
+    if [ -d "$PWD/.git" ]; then cmd_up "$PWD"; else usage; fi ;;
+  install)   shift; cmd_install "$@" ;;
   up)        shift; cmd_up "$@" ;;
   attach)    shift; cmd_attach "$@" ;;
   shell)     shift; cmd_shell "$@" ;;

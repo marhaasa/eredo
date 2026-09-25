@@ -26,16 +26,25 @@ the macOS keychain or `~/.claude/.credentials.json`, or you export
 ## Install
 
 ```bash
-git clone https://github.com/marhaasa/moat.git
-ln -s "$PWD/moat/moat" ~/.local/bin/moat        # or anywhere else on your PATH
-ln -s "$PWD/moat/skills/moat" ~/.claude/skills/moat   # optional: lets Claude configure moat for you
-moat doctor
+brew install marhaasa/tools/moat        # macOS or Linux with Homebrew
 ```
+
+or, without Homebrew:
+
+```bash
+git clone https://github.com/marhaasa/moat.git && ./moat/moat install
+```
+
+`moat install` links the command into `~/.local/bin` if it is not already on
+your PATH, and links the moat skill into `~/.claude/skills` so Claude Code on
+the host can configure moat for you. Run it after a Homebrew install too, for
+the skill.
 
 ## Usage
 
 ```bash
-moat up ~/src/project              # build images on first use, start, attach Claude Code
+cd ~/src/project && moat           # first run builds the images (a few minutes), then starts and attaches
+moat up ~/src/project              # the same from anywhere
 moat up ~/src/app ~/src/lib        # extra repos read-only under /home/node/<name>; --rw for read-write
 moat attach [name]                 # re-attach to a running sandbox
 moat up --model opus --effort low --mode plan ~/src/project   # per-run overrides
@@ -92,9 +101,9 @@ for a local MCP server or database), `CLAUDE_CODE_OAUTH_TOKEN`.
 ### With Claude's help
 
 `skills/moat/SKILL.md` teaches Claude Code the layering above and the
-commands that apply a change. Link it into `~/.claude/skills/moat` on the host
-and "allow pypi in moat" or "add the context7 plugin to my sandbox" becomes a
-one-line request. Every sandbox gets the same skill, so inside one Claude
+commands that apply a change. `moat install` links it into
+`~/.claude/skills/moat` on the host, and "allow pypi in moat" or "add the
+context7 plugin to my sandbox" becomes a one-line request. Every sandbox gets the same skill, so inside one Claude
 knows to put a domain in the repo's `.moat/allowlist.txt` and ask you to run
 `moat reload`.
 
