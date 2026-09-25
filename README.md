@@ -43,6 +43,16 @@ Claude Code on the host can configure moat for you. Run it after a Homebrew
 install too, for the skill. On Windows, put `moat.exe` on your PATH and run
 `moat install` for the skill.
 
+## Platforms
+
+macOS and Linux run the repo at its host path inside the sandbox. On
+Windows, `moat.exe` runs natively from PowerShell or Windows Terminal with
+Docker Desktop, and a repo at `C:\Users\me\src\app` appears inside as
+`/c/Users/me/src/app`. Bind mounts from `C:` are slower than from the WSL
+filesystem and show up root-owned inside the container, which is why moat
+adds `safe.directory` entries for every mounted repo. Running inside WSL2
+with Docker Desktop's WSL integration works too, as Linux.
+
 ## Usage
 
 ```bash
