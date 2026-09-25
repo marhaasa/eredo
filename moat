@@ -22,7 +22,7 @@
 #   moat ps                list sandboxes
 #   moat audit  [name]     show egress log and tool-call log
 #   moat reload            make running proxies re-read the allowlist
-#   moat clean [--volumes] remove all sandboxes, proxies and networks
+#   moat clean [--volumes] [name] remove one or all sandboxes, proxies and networks
 #   moat build [--pull]    (re)build both images
 #   moat config [path|init|show]
 #                     where overrides live; init copies the shipped files there
@@ -381,16 +381,36 @@ cmd_config() {
   esac
 }
 
+# clean [--volumes] [name]: remove one project's sandbox, proxy and network, or
+# all of them. Also removes the claude-* generation this tool grew out of.
+# --volumes drops the config and history volumes too.
 cmd_clean() {
-  local c
-  for c in $(docker ps -aq --filter "label=$LABEL=1"); do docker rm -f "$c" >/dev/null; done
-  # Containers from the previous devcontainer-based setup
-  for c in $(docker ps -aq --filter "label=devcontainer.local_folder") \
-           $(docker ps -aq --filter "name=claude-multi-"); do docker rm -f "$c" >/dev/null; done
-  for c in $(docker network ls -q --filter "label=$LABEL=1"); do docker network rm "$c" >/dev/null; done
-  if [ "${1:-}" = "--volumes" ]; then
-    # Current volumes plus those of the previous devcontainer-based setup
-    for c in $(docker volume ls -q | grep -E '^claude-(.*-(config|history)|code-config-.*|code-bashhistory-.*|multi-config-.*)$' || true); do
+  local volumes=0 name="" c
+  while [ $# -gt 0 ]; do
+    case "$1" in --volumes) volumes=1 ;; -*) die "unknown option: $1" ;; *) name="$1" ;; esac
+    shift
+  done
+  if [ -n "$name" ]; then
+    remove_project "$name"
+    docker rm -f "claude-$name" "claude-$name-proxy" >/dev/null 2>&1 || true
+    docker network rm "claude-$name-net" >/dev/null 2>&1 || true
+    if [ $volumes -eq 1 ]; then
+      for c in "moat-$name-config" "moat-$name-history" "claude-$name-config" "claude-$name-history"; do
+        docker volume rm "$c" >/dev/null 2>&1 || true
+      done
+    fi
+    info "removed $name"
+    return 0
+  fi
+  for c in $(docker ps -aq --filter "label=$LABEL=1") $(docker ps -aq --filter "label=claude.sandbox=1") \
+           $(docker ps -aq --filter "label=devcontainer.local_folder") $(docker ps -aq --filter "name=claude-multi-"); do
+    docker rm -f "$c" >/dev/null
+  done
+  for c in $(docker network ls -q --filter "label=$LABEL=1") $(docker network ls -q --filter "label=claude.sandbox=1"); do
+    docker network rm "$c" >/dev/null
+  done
+  if [ $volumes -eq 1 ]; then
+    for c in $(docker volume ls -q | grep -E '^(moat|claude)-.*-(config|history)$|^claude-(code-config|code-bashhistory|multi-config)-' || true); do
       docker volume rm "$c" >/dev/null
     done
     info "removed sandboxes, networks and volumes"
@@ -464,8 +484,7 @@ cmd_selftest() {
   local rc=0
   MOAT_CONFIG="$cfg" MOAT_STATE="$tmp/state" "$0" up --no-attach "$repo" || rc=$?
   if [ $rc -eq 0 ]; then "$0" doctor selftest || rc=$?; fi
-  remove_project selftest
-  docker volume rm moat-selftest-config moat-selftest-history >/dev/null 2>&1 || true
+  cmd_clean --volumes selftest >/dev/null
   rm -rf "$tmp"
   return $rc
 }

@@ -43,7 +43,7 @@ moat audit [name]                  # every connection the proxy saw, every tool 
 moat config init                   # copy the shipped settings and plugins to ~/.config/moat for editing
 moat reload                        # apply edited allowlists and settings to running sandboxes
 moat doctor [name]                 # check the host and a running sandbox
-moat clean [--volumes]             # remove sandboxes; --volumes drops config and history too
+moat clean [--volumes] [name]      # remove one or all sandboxes; --volumes drops config and history too
 moat build --pull                  # update Claude Code (auto-update is off inside)
 ```
 
