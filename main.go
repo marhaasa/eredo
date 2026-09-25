@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-const version = "0.3.0-dev"
+const version = "0.3.0"
 
 const usageText = `eredo: a Docker sandbox for Claude Code.
 
